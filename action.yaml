@@ -1,0 +1,4 @@
+name: 'Notification PR Bot'
+description: 'Small script to make deploy to production PRs for Notify'
+  using: 'node12'
+  main: 'index.js'
