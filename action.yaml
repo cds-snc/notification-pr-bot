@@ -2,4 +2,4 @@ name: 'Notification PR Bot'
 description: 'Small script to make deploy to production PRs for Notify'
 runs:
   using: 'node12'
-  main: 'index.js'
+  main: 'dist/index.js'
