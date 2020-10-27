@@ -55,11 +55,12 @@ async function closePRs() {
    })
 }
 
-async function hasChangesInStaging() {
+async function hasChangesOnStagingTfRepo() {
     pullsSearchDefinition = {
         owner: 'cds-snc',
         sort: 'updated',
         direction: 'desc',
+        // Not possible to target merged PRs, should filter on merged_at instead
         state: 'closed',
         page: 1
     }
@@ -120,8 +121,8 @@ async function run() {
       const apiMsgs = await getCommitMessages("notification-api", oldApiSha)
 
       let logs = `ADMIN: \n\n ${adminMsgs.join("\n")} \n\n API: \n\n ${apiMsgs.join("\n")}`
-      if(hasChangesInStaging()){
-        logs = `⚠️ There was a merged pull request in [notification-staging-tf](https://github.com/cds-snc/notification-staging-tf) since last deploy in production! \n\n ${logs}`
+      if(hasChangesOnStagingTfRepo()){
+        logs = `⚠️ There was a merged pull request in [notification-staging-tf](https://github.com/cds-snc/notification-staging-tf) since last deploy in production! Check first that you don't need to change the infrastructure here. \n\n ${logs}`
       }
 
       branchName = `release-${new Date().getTime()}`
