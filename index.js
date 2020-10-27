@@ -30,6 +30,57 @@ const getHeadSha = async (repo) => {
   return data.commit.sha;
 }
 
+async function closePRs() {
+   // Close old auto PRs
+   const {data: prs} = await octokit.pulls.list({
+     owner: 'cds-snc',
+     repo: 'notification-tf',
+     state: 'open'
+   });
+
+   prs.forEach( async pr => {
+     if(pr.title.startsWith("[AUTO-PR]")) {
+       await octokit.pulls.update({
+         owner: 'cds-snc',
+         repo: 'notification-tf',
+         pull_number: pr.number,
+         state: "closed"
+       });
+       await octokit.git.deleteRef({
+         owner: 'cds-snc',
+         repo: 'notification-tf',
+         ref: `heads/${pr.head.ref}`
+       });
+     }
+   })
+}
+
+async function hasChangesOnStagingTfRepo() {
+    pullsSearchDefinition = {
+        owner: 'cds-snc',
+        sort: 'updated',
+        direction: 'desc',
+        // Not possible to target merged PRs, should filter on merged_at instead
+        state: 'closed',
+        page: 1
+    }
+    const prodPulls = await octokit.pulls.list({
+        ...pullsSearchDefinition,
+        repo: 'notification-tf',
+    })
+    const stagingPulls = await octokit.pulls.list({
+        ...pullsSearchDefinition,
+        repo: 'notification-staging-tf',
+    })
+
+    const mergedProdPulls = prodPulls['data'].filter(pr => pr.merged_at !== null);
+    const mergedStagingPulls = stagingPulls['data'].filter(pr => pr.merged_at !== null);
+
+    const prodLastProdPR = Date.parse(mergedProdPulls[0].merged_at);
+    const stagingLastPR = Date.parse(mergedStagingPulls[0].merged_at);
+    return stagingLastPR > prodLastProdPR;
+}
+
 async function run() {
     const { data: data } = await octokit.repos.getContents({
       owner: 'cds-snc',
@@ -55,7 +106,7 @@ async function run() {
         oldAdminSha = image.newName.split(":").slice(-1)[0]
         image.newName = `gcr.io/cdssnc/notify/admin:${adminSha.slice(0,7)}`
       }
-      if(image.name == "api"){ 
+      if(image.name == "api"){
         oldApiSha= image.newName.split(":").slice(-1)[0]
         image.newName = `gcr.io/cdssnc/notify/api:${apiSha.slice(0,7)}`
       }
@@ -63,35 +114,16 @@ async function run() {
 
     const newBlob = Base64.encode(YAML.stringify(fileContent))
 
-    if(newBlob !== data.content){
-
-      // Close old auto PRs
-      const {data: prs} = await octokit.pulls.list({
-        owner: 'cds-snc',
-        repo: 'notification-tf',
-        state: 'open'
-      });
-  
-      prs.forEach( async pr => {
-        if(pr.title.startsWith("[AUTO-PR]")) {
-          await octokit.pulls.update({
-            owner: 'cds-snc',
-            repo: 'notification-tf',
-            pull_number: pr.number,
-            state: "closed"
-          });
-          await octokit.git.deleteRef({
-            owner: 'cds-snc',
-            repo: 'notification-tf',
-            ref: `heads/${pr.head.ref}`
-          });
-        }
-      })
+   if(newBlob !== data.content){
+      closePRs()
 
       const adminMsgs = await getCommitMessages("notification-admin", oldAdminSha)
       const apiMsgs = await getCommitMessages("notification-api", oldApiSha)
-  
+
       let logs = `ADMIN: \n\n ${adminMsgs.join("\n")} \n\n API: \n\n ${apiMsgs.join("\n")}`
+      if(hasChangesOnStagingTfRepo()){
+        logs = `⚠️ There was a merged pull request in [notification-staging-tf](https://github.com/cds-snc/notification-staging-tf) since last deploy in production! Check first that you don't need to change the infrastructure here. \n\n ${logs}`
+      }
 
       branchName = `release-${new Date().getTime()}`
 
@@ -121,6 +153,6 @@ async function run() {
         body: issueContent.replace("> Give details ex. Security patching, content update, more API pods etc", logs),
         draft: true
       });
-    }
+  }
 }
 run();
