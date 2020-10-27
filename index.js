@@ -121,7 +121,7 @@ async function run() {
 
       let logs = `ADMIN: \n\n ${adminMsgs.join("\n")} \n\n API: \n\n ${apiMsgs.join("\n")}`
       if(hasChangesInStaging()){
-        logs = `Warning! There was a merged Pull Requests in notification-staging-tf since last deploy in production! \n\n ${logs}`
+        logs = `⚠️ There was a merged pull request in [notification-staging-tf](https://github.com/cds-snc/notification-staging-tf) since last deploy in production! \n\n ${logs}`
       }
 
       branchName = `release-${new Date().getTime()}`
