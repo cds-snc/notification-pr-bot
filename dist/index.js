@@ -136,7 +136,7 @@ async function run() {
       const apiMsgs = await getCommitMessages("notification-api", oldApiSha)
 
       let logs = `ADMIN: \n\n ${adminMsgs.join("\n")} \n\n API: \n\n ${apiMsgs.join("\n")}`
-      if(hasChangesOnStagingTfRepo()){
+      if (await hasChangesOnStagingTfRepo()) {
         logs = `⚠️ There was a merged pull request in [notification-staging-tf](https://github.com/cds-snc/notification-staging-tf) since last deploy in production! Check first that you don't need to change the infrastructure here. \n\n ${logs}`
       }
 
