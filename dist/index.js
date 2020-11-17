@@ -33,7 +33,7 @@ const getCommitMessages = async (repo, sha) => {
       break;
     }
   }
-  return commits.slice(0, index).map(c => `- [${c.commit.message.split("\n\n")[0]}](${c.html_url})`)
+  return commits.slice(0, index).map(c => `- [${c.commit.message.split("\n\n")[0]}](${c.html_url}) by ${c.commit.author.name}`)
 }
 
 const getHeadSha = async (repo) => {
