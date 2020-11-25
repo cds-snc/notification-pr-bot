@@ -132,7 +132,7 @@ async function run() {
 
       let logs = `ADMIN: \n\n ${adminMsgs.join("\n")} \n\n API: \n\n ${apiMsgs.join("\n")}`
       if (await isNotLatestVersion()) {
-        logs = `⚠️ The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before! \n\n ${logs}`
+        logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`
       }
 
       branchName = `release-${new Date().getTime()}`
