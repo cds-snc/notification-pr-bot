@@ -55,7 +55,7 @@ async function closePRs() {
    })
 }
 
-async function isNotLatestVersion() {
+async function isNotLatestManifestsVersion() {
     const { data: data } = await octokit.repos.getContents({
       owner: 'cds-snc',
       repo: 'notification-manifests',
@@ -76,6 +76,27 @@ async function isNotLatestVersion() {
     return prodVersion != latestVersion;
 }
 
+async function isNotLatestTerraformVersion() {
+    const { data: data } = await octokit.repos.getContents({
+      owner: 'cds-snc',
+      repo: 'notification-terraform',
+      path: '.github/workflows/merge_to_main_production.yml'
+    });
+
+    const fileContent = Base64.decode(data.content);
+    const prodVersion = fileContent.match(/INFRASTRUCTURE_VERSION: '(.*)'/)[1];
+
+    const {data: [latestTag]} = await octokit.repos.listTags({
+      owner: 'cds-snc',
+      repo: 'notification-terraform',
+      per_page: 1,
+    });
+
+    const latestVersion = latestTag.name.replace('v', '');
+
+    return prodVersion != latestVersion;
+}
+
 async function run() {
     const { data: data } = await octokit.repos.getContents({
       owner: 'cds-snc',
@@ -91,7 +112,7 @@ async function run() {
 
     const apiSha = await getHeadSha("notification-api");
     const adminSha = await getHeadSha("notification-admin");
-    const tfSha = await getHeadSha("notification-manifests", "main");
+    const manifestsSha = await getHeadSha("notification-manifests", "main");
 
     fileContent = YAML.parse(Base64.decode(data.content));
     issueContent = Base64.decode(issueData.content);
@@ -116,8 +137,12 @@ async function run() {
       const apiMsgs = await getCommitMessages("notification-api", oldApiSha)
 
       let logs = `ADMIN: \n\n ${adminMsgs.join("\n")} \n\n API: \n\n ${apiMsgs.join("\n")}`
-      if (await isNotLatestVersion()) {
+      if (await isNotLatestManifestsVersion()) {
         logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`
+      }
+
+      if (await isNotLatestTerraformVersion()) {
+        logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`
       }
 
       branchName = `release-${new Date().getTime()}`
@@ -126,7 +151,7 @@ async function run() {
         owner: 'cds-snc',
         repo: 'notification-manifests',
         ref: `refs/heads/${branchName}`,
-        sha: tfSha
+        sha: manifestsSha
       });
 
       await octokit.repos.createOrUpdateFile({
