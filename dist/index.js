@@ -39,10 +39,20 @@ const getCommitMessages = async (repo, sha) => {
 const getHeadSha = async (repo, branch = 'master') => {
   const { data: data } = await octokit.repos.getBranch({
     owner: 'cds-snc',
-    repo: repo,
+    repo,
     branch,
   });
   return data.commit.sha;
+}
+
+const getLatestTag = async (repo) => {
+  const {data: [latestTag]} = await octokit.repos.listTags({
+    owner: 'cds-snc',
+    repo,
+    per_page: 1,
+  });
+
+  return latestTag.name;
 }
 
 async function closePRs() {
@@ -80,13 +90,7 @@ async function isNotLatestManifestsVersion() {
     const fileContent = Base64.decode(data.content);
     const prodVersion = fileContent.match(/notification-manifests\/\/base\?ref=(.*)/)[1];
 
-    const {data: [latestTag]} = await octokit.repos.listTags({
-      owner: 'cds-snc',
-      repo: 'notification-manifests',
-      per_page: 1,
-    });
-
-    const latestVersion = latestTag.name;
+    const latestVersion = await getLatestTag('notification-manifests');
 
     return prodVersion != latestVersion;
 }
@@ -101,13 +105,7 @@ async function isNotLatestTerraformVersion() {
     const fileContent = Base64.decode(data.content);
     const prodVersion = fileContent.match(/INFRASTRUCTURE_VERSION: '(.*)'/)[1];
 
-    const {data: [latestTag]} = await octokit.repos.listTags({
-      owner: 'cds-snc',
-      repo: 'notification-terraform',
-      per_page: 1,
-    });
-
-    const latestVersion = latestTag.name.replace('v', '');
+    const latestVersion = (await getLatestTag('notification-terraform')).replace('v', '');
 
     return prodVersion != latestVersion;
 }
