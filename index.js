@@ -5,6 +5,8 @@ const YAML = require('yaml');
 const myToken = process.env.TOKEN;
 const octokit = new github.GitHub(myToken);
 
+const awsEcrUrl = 'public.ecr.aws/v6b8u5o6';
+
 const getCommitMessages = async (repo, sha) => {
   const { data: commits } = await octokit.repos.listCommits({
     owner: "cds-snc",
@@ -118,11 +120,11 @@ async function run() {
     fileContent.images.forEach((image) => {
       if(image.name == "admin"){
         oldAdminSha = image.newName.split(":").slice(-1)[0]
-        image.newName = `gcr.io/cdssnc/notify/admin:${adminSha.slice(0,7)}`
+        image.newName = `${awsEcrUrl}/cdssnc/notify/admin:${adminSha.slice(0,7)}`
       }
       if(image.name == "api"){
         oldApiSha= image.newName.split(":").slice(-1)[0]
-        image.newName = `gcr.io/cdssnc/notify/api:${apiSha.slice(0,7)}`
+        image.newName = `${awsEcrUrl}/cdssnc/notify/api:${apiSha.slice(0,7)}`
       }
     });
 
