@@ -2,10 +2,19 @@ const github = require('@actions/github');
 const Base64 = require('js-base64').Base64;
 const YAML = require('yaml');
 
+
+// Environmment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 const myToken = process.env.TOKEN;
 const octokit = new github.GitHub(myToken);
 
-const awsEcrUrl = 'public.ecr.aws/v6b8u5o6';
+
+// Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+const AWS_ECR_URL = 'public.ecr.aws/v6b8u5o6';
+
+
+// Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const getCommitMessages = async (repo, sha) => {
   const { data: commits } = await octokit.repos.listCommits({
@@ -120,11 +129,11 @@ async function run() {
     fileContent.images.forEach((image) => {
       if(image.name == "admin"){
         oldAdminSha = image.newName.split(":").slice(-1)[0]
-        image.newName = `${awsEcrUrl}/cdssnc/notify/admin:${adminSha.slice(0,7)}`
+        image.newName = `${AWS_ECR_URL}/notify-admin:${adminSha.slice(0,7)}`
       }
       if(image.name == "api"){
         oldApiSha= image.newName.split(":").slice(-1)[0]
-        image.newName = `${awsEcrUrl}/cdssnc/notify/api:${apiSha.slice(0,7)}`
+        image.newName = `${AWS_ECR_URL}/notify-api:${apiSha.slice(0,7)}`
       }
     });
 
