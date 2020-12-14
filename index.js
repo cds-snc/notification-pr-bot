@@ -11,7 +11,7 @@ const octokit = new github.GitHub(myToken);
 
 // Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-const AWS_ECR_URL = 'public.ecr.aws/v6b8u5o6';
+const AWS_ECR_URL = 'public.ecr.aws/cds-snc';
 
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
