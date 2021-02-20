@@ -140,11 +140,11 @@ async function run() {
 
   fileContent.images.forEach((image) => {
     if (image.name == "admin") {
-      const oldAdminSha = image.newName.split(":").slice(-1)[0]; // eslint-disable-line no-unused-vars
+      oldAdminSha = image.newName.split(":").slice(-1)[0]; // eslint-disable-line no-unused-vars, no-undef
       image.newName = `${AWS_ECR_URL}/notify-admin:${adminSha.slice(0, 7)}`;
     }
     if (image.name == "api") {
-      const oldApiSha = image.newName.split(":").slice(-1)[0]; // eslint-disable-line no-unused-vars
+      oldApiSha = image.newName.split(":").slice(-1)[0]; // eslint-disable-line no-unused-vars, no-undef
       image.newName = `${AWS_ECR_URL}/notify-api:${apiSha.slice(0, 7)}`;
     }
   });
@@ -156,8 +156,8 @@ async function run() {
 
     const adminMsgs = await getCommitMessages(
       "notification-admin",
-      oldAdminSha
-    ); // eslint-disable-line no-undef
+      oldAdminSha // eslint-disable-line no-undef
+    );
     const apiMsgs = await getCommitMessages("notification-api", oldApiSha); // eslint-disable-line no-undef
 
     let logs = `ADMIN: \n\n ${adminMsgs.join(
