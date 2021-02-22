@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "./node_modules/.bin/eslint index.js && ncc build index.js -o dist",
+    "build": "npx eslint index.js && ncc build index.js -o dist",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
