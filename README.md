@@ -1,7 +1,7 @@
 # PR-bot
 
 Automatically creates the production deployment PRs for Notify on
-[notification-tf](https://github.com/cds-snc/notification-tf).
+[notification-manifests](https://github.com/cds-snc/notification-manifests).
 
 ## Development
 
@@ -18,7 +18,7 @@ To run the PR-bot locally,
 [first create an API token in GitHub](https://github.com/settings/tokens) with
 a scope defined on repository access. The PR bot script only need these.
 
-Once the token is created, you will need to provide it to the scripts' environment
+Once the token is created, you will need to provide it to the script's environment
 when executing it:
 
 ```shell
