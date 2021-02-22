@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "lint": "npx eslint index.js",
+    "format": "npx prettier --write index.js",
     "build": "ncc build index.js -o dist",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -15,6 +17,8 @@
     "yaml": "^1.10.0"
   },
   "devDependencies": {
-    "@vercel/ncc": "^0.24.1"
+    "@vercel/ncc": "^0.27.0",
+    "eslint": "^7.20.0",
+    "prettier": "2.2.1"
   }
 }
