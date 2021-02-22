@@ -1,7 +1,7 @@
 # PR-bot
 
 Automatically creates the production deployment PRs for Notify on
-[notification-tf](https://github.com/cds-snc/notification-tf).
+[notification-manifests](https://github.com/cds-snc/notification-manifests).
 
 ## Development
 
