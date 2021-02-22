@@ -153,17 +153,25 @@ async function run() {
   const fileContent = YAML.parse(Base64.decode(data.content));
   const issueContent = Base64.decode(issueData.content);
 
+  function getSha(imageName) {
+    return imageName.split(":").slice(-1)[0];
+  }
+
+  function getLatestImageName(imageName, projectName) {
+    const sha = getSha(imageName);
+    return `${AWS_ECR_URL}/${projectName}:${sha.slice(0, 7)}`;
+  }
+
   fileContent.images.forEach((image) => {
-    if (image.name == "admin") {
-      oldAdminSha = image.newName.split(":").slice(-1)[0]; // eslint-disable-line no-unused-vars, no-undef
-      image.newName = `${AWS_ECR_URL}/notify-admin:${adminSha.slice(0, 7)}`;
-    }
-    if (image.name == "api") {
-      oldApiSha = image.newName.split(":").slice(-1)[0]; // eslint-disable-line no-unused-vars, no-undef
-      image.newName = `${AWS_ECR_URL}/notify-api:${apiSha.slice(0, 7)}`;
-    }
+    image.newName = getLatestImageName(image, `notify-${image.name}`);
   });
 
+  const oldAdminSha = fileContent.images
+    .filter((image) => image.name === "admin")
+    .map((image) => getSha(image.name));
+  const oldApiSha = fileContent.images
+    .filter((image) => image.name === "api")
+    .map((image) => getSha(image.name));
   const newBlob = Base64.encode(YAML.stringify(fileContent));
 
   if (newBlob !== data.content) {
@@ -171,9 +179,9 @@ async function run() {
 
     const adminMsgs = await getCommitMessages(
       "notification-admin",
-      oldAdminSha // eslint-disable-line no-undef
+      oldAdminSha
     );
-    const apiMsgs = await getCommitMessages("notification-api", oldApiSha); // eslint-disable-line no-undef
+    const apiMsgs = await getCommitMessages("notification-api", oldApiSha);
 
     let logs = `ADMIN: \n\n ${adminMsgs.join(
       "\n"
