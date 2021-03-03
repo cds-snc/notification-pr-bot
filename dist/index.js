@@ -13,25 +13,55 @@ module.exports = JSON.parse("{\"name\":\"@octokit/rest\",\"version\":\"16.43.1\"
 /***/ 2932:
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __nccwpck_require__) => {
 
+// Imports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 const github = __nccwpck_require__(5438);
 const Base64 = __nccwpck_require__(4139).Base64;
 const YAML = __nccwpck_require__(3552);
 const process = __nccwpck_require__(1765);
 
-// Environmment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Environmment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const myToken = process.env.TOKEN;
 const octokit = new github.GitHub(myToken);
 
 // Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-const AWS_ECR_URL = "public.ecr.aws/cds-snc";
+const GH_CDS = "cds-snc";
+const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
+
+const PROJECTS = [
+  {
+    name: "notification-api",
+    ecrName: "notify-api",
+    mainBranch: "master",
+  },
+  {
+    name: "notification-admin",
+    ecrName: "notify-admin",
+    mainBranch: "master",
+  },
+  {
+    name: "notification-document-download-api",
+    ecrName: "notify-document-download-api",
+    mainBranch: "master",
+  },
+  {
+    name: "notification-document-download-frontend",
+    ecrName: "notify-document-download-frontend",
+    mainBranch: "master",
+  },
+  {
+    name: "notification-documentation",
+    ecrName: "notify-documentation",
+    mainBranch: "main",
+  },
+];
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const getCommitMessages = async (repo, sha) => {
   const { data: commits } = await octokit.repos.listCommits({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo,
     per_page: 50,
   });
@@ -53,19 +83,19 @@ const getCommitMessages = async (repo, sha) => {
 };
 
 const getHeadSha = async (repo, branch = "master") => {
-  const { data: data } = await octokit.repos.getBranch({
-    owner: "cds-snc",
+  const { data: repoBranch } = await octokit.repos.getBranch({
+    owner: GH_CDS,
     repo,
     branch,
   });
-  return data.commit.sha;
+  return repoBranch.commit.sha;
 };
 
 const getLatestTag = async (repo) => {
   const {
     data: [latestTag],
   } = await octokit.repos.listTags({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo,
     per_page: 1,
   });
@@ -76,7 +106,7 @@ const getLatestTag = async (repo) => {
 async function closePRs() {
   // Close old auto PRs
   const { data: prs } = await octokit.pulls.list({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo: "notification-manifests",
     state: "open",
   });
@@ -84,13 +114,13 @@ async function closePRs() {
   prs.forEach(async (pr) => {
     if (pr.title.startsWith("[AUTO-PR]")) {
       await octokit.pulls.update({
-        owner: "cds-snc",
+        owner: GH_CDS,
         repo: "notification-manifests",
         pull_number: pr.number,
         state: "closed",
       });
       await octokit.git.deleteRef({
-        owner: "cds-snc",
+        owner: GH_CDS,
         repo: "notification-manifests",
         ref: `heads/${pr.head.ref}`,
       });
@@ -99,14 +129,14 @@ async function closePRs() {
 }
 
 async function isNotLatestManifestsVersion() {
-  const { data: data } = await octokit.repos.getContents({
-    owner: "cds-snc",
-    repo: "notification-manifests",
-    path: "env/production/kustomization.yaml",
-  });
+  const releaseConfig = await getContents(
+    GH_CDS,
+    "notification-manifests",
+    "env/production/kustomization.yaml"
+  );
 
-  const fileContent = Base64.decode(data.content);
-  const prodVersion = fileContent.match(
+  const releaseContent = Base64.decode(releaseConfig.content);
+  const prodVersion = releaseContent.match(
     /notification-manifests\/\/base\?ref=(.*)/
   )[1];
 
@@ -116,15 +146,16 @@ async function isNotLatestManifestsVersion() {
 }
 
 async function isNotLatestTerraformVersion() {
-  const { data: data } = await octokit.repos.getContents({
-    owner: "cds-snc",
-    repo: "notification-terraform",
-    path: ".github/workflows/merge_to_main_production.yml",
-  });
+  const prodWorkflow = await getContents(
+    GH_CDS,
+    "notification-terraform",
+    ".github/workflows/merge_to_main_production.yml"
+  );
 
-  const fileContent = Base64.decode(data.content);
-  const prodVersion = fileContent.match(/INFRASTRUCTURE_VERSION: '(.*)'/)[1];
-
+  const workflowContent = Base64.decode(prodWorkflow.content);
+  const prodVersion = workflowContent.match(
+    /INFRASTRUCTURE_VERSION: '(.*)'/
+  )[1];
   const latestVersion = (await getLatestTag("notification-terraform")).replace(
     "v",
     ""
@@ -133,95 +164,148 @@ async function isNotLatestTerraformVersion() {
   return prodVersion != latestVersion;
 }
 
-async function run() {
-  const { data: data } = await octokit.repos.getContents({
-    owner: "cds-snc",
-    repo: "notification-manifests",
-    path: "env/production/kustomization.yaml",
-  });
-
-  const { data: issueData } = await octokit.repos.getContents({
-    owner: "cds-snc",
-    repo: "notification-manifests",
-    path: ".github/PULL_REQUEST_TEMPLATE.md",
-  });
-
-  const apiSha = await getHeadSha("notification-api");
-  const adminSha = await getHeadSha("notification-admin");
-  const manifestsSha = await getHeadSha("notification-manifests", "main");
-
-  const fileContent = YAML.parse(Base64.decode(data.content));
-  const issueContent = Base64.decode(issueData.content);
-
-  fileContent.images.forEach((image) => {
-    if (image.name == "admin") {
-      oldAdminSha = image.newName.split(":").slice(-1)[0]; // eslint-disable-line no-unused-vars, no-undef
-      image.newName = `${AWS_ECR_URL}/notify-admin:${adminSha.slice(0, 7)}`;
-    }
-    if (image.name == "api") {
-      oldApiSha = image.newName.split(":").slice(-1)[0]; // eslint-disable-line no-unused-vars, no-undef
-      image.newName = `${AWS_ECR_URL}/notify-api:${apiSha.slice(0, 7)}`;
-    }
-  });
-
-  const newBlob = Base64.encode(YAML.stringify(fileContent));
-
-  if (newBlob !== data.content) {
-    closePRs();
-
-    const adminMsgs = await getCommitMessages(
-      "notification-admin",
-      oldAdminSha // eslint-disable-line no-undef
-    );
-    const apiMsgs = await getCommitMessages("notification-api", oldApiSha); // eslint-disable-line no-undef
-
-    let logs = `ADMIN: \n\n ${adminMsgs.join(
-      "\n"
-    )} \n\n API: \n\n ${apiMsgs.join("\n")}`;
-    if (await isNotLatestManifestsVersion()) {
-      logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-    }
-
-    if (await isNotLatestTerraformVersion()) {
-      logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-    }
-
-    const branchName = `release-${new Date().getTime()}`;
-
-    await octokit.git.createRef({
-      owner: "cds-snc",
-      repo: "notification-manifests",
-      ref: `refs/heads/${branchName}`,
-      sha: manifestsSha,
-    });
-
-    await octokit.repos.createOrUpdateFile({
-      owner: "cds-snc",
-      repo: "notification-manifests",
-      branch: branchName,
-      sha: data.sha,
-      path: "env/production/kustomization.yaml",
-      message: `Updated manifests to admin:${adminSha.slice(
-        0,
-        7
-      )} and api:${apiSha.slice(0, 7)}`,
-      content: newBlob,
-    });
-
-    await octokit.pulls.create({
-      owner: "cds-snc",
-      repo: "notification-manifests",
-      title: `[AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
-      head: branchName,
-      base: "main",
-      body: issueContent.replace(
-        "> Give details ex. Security patching, content update, more API pods etc",
-        logs
-      ),
-      draft: true,
-    });
-  }
+function shortSha(fullSha) {
+  return fullSha.slice(0, 7);
 }
+
+function getSha(imageName) {
+  return imageName.split(":").slice(-1)[0];
+}
+
+function getLatestImageUrl(projectName, headSha) {
+  return `${AWS_ECR_URL}/${projectName}:${shortSha(headSha)}`;
+}
+
+async function buildLogs(projects) {
+  let logs = projects.map(async (project) => {
+    const msgsCommits = await getCommitMessages(project.name, project.oldSha);
+    const strCommits = msgsCommits.join("\n");
+    const projectName = project.name.toUpperCase();
+    return `${projectName}\n\n${strCommits}`;
+  });
+  logs = await Promise.all(logs);
+
+  logs = logs.join("\n\n");
+  if (await isNotLatestManifestsVersion()) {
+    logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+  }
+
+  if (await isNotLatestTerraformVersion()) {
+    logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+  }
+  return logs;
+}
+
+async function getContents(owner, repo, path) {
+  const { data: data } = await octokit.repos.getContents({
+    owner,
+    repo,
+    path,
+  });
+  return data;
+}
+
+async function createPR(
+  projects,
+  issueContent,
+  releaseConfig,
+  newReleaseContentBlob
+) {
+  const branchName = `release-${new Date().getTime()}`;
+  const manifestsSha = await getHeadSha("notification-manifests", "main");
+  const logs = await buildLogs(projects);
+
+  const ref = await octokit.git.createRef({
+    owner: GH_CDS,
+    repo: "notification-manifests",
+    ref: `refs/heads/${branchName}`,
+    sha: manifestsSha,
+  });
+
+  const manifestUpdates = projects
+    .map((project) => {
+      return `${project.name}:${shortSha(project.headSha)}`;
+    })
+    .join(" and ");
+  const update = await octokit.repos.createOrUpdateFile({
+    owner: GH_CDS,
+    repo: "notification-manifests",
+    branch: branchName,
+    sha: releaseConfig.sha,
+    path: "env/production/kustomization.yaml",
+    message: `Updated manifests to ${manifestUpdates}`,
+    content: newReleaseContentBlob,
+  });
+
+  const pr = await octokit.pulls.create({
+    owner: GH_CDS,
+    repo: "notification-manifests",
+    title: `[AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
+    head: branchName,
+    base: "main",
+    body: issueContent.replace(
+      "> Give details ex. Security patching, content update, more API pods etc",
+      logs
+    ),
+    draft: true,
+  });
+  return Promise.all([ref, update, pr]);
+}
+
+async function hydrateWithSHAs(releaseConfig, projects) {
+  return await Promise.all(
+    releaseConfig.images.map(async (image) => {
+      const matchingProject = projects.find((project) =>
+        image.newName.includes(project.ecrName)
+      );
+      matchingProject.headSha = await getHeadSha(
+        matchingProject.name,
+        matchingProject.mainBranch
+      );
+      matchingProject.headUrl = getLatestImageUrl(
+        matchingProject.ecrName,
+        matchingProject.headSha
+      );
+      matchingProject.oldSha = getSha(image.newName);
+      matchingProject.oldUrl = image.newName;
+      image.newName = matchingProject.headUrl;
+      return matchingProject;
+    })
+  );
+}
+
+// Main ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+async function run() {
+  const releaseContent = await getContents(
+    GH_CDS,
+    "notification-manifests",
+    "env/production/kustomization.yaml"
+  );
+
+  const prTemplate = await getContents(
+    GH_CDS,
+    "notification-manifests",
+    ".github/PULL_REQUEST_TEMPLATE.md"
+  );
+
+  const releaseConfig = YAML.parse(Base64.decode(releaseContent.content));
+  const issueContent = Base64.decode(prTemplate.content);
+
+  // Build up projects and update images with latest SHAs.
+  await hydrateWithSHAs(releaseConfig, PROJECTS);
+
+  // Return if no new changes.
+  const newReleaseContentBlob = Base64.encode(YAML.stringify(releaseConfig));
+  if (newReleaseContentBlob.trim() === releaseContent.content.trim()) {
+    return;
+  }
+
+  await closePRs();
+  await createPR(PROJECTS, issueContent, releaseContent, newReleaseContentBlob);
+}
+
+// Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 run();
 
 
