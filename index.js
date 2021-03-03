@@ -11,7 +11,9 @@ const octokit = new github.GitHub(myToken);
 
 // Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-const AWS_ECR_URL = "public.ecr.aws/cds-snc";
+const GH_CDS = "cds-snc";
+const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
+
 
 const PROJECTS = [
   {
@@ -46,7 +48,7 @@ const PROJECTS = [
 // async function getCommitMessages(repo, sha) {
 const getCommitMessages = async (repo, sha) => {
   const { data: commits } = await octokit.repos.listCommits({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo,
     per_page: 50,
   });
@@ -69,7 +71,7 @@ const getCommitMessages = async (repo, sha) => {
 
 const getHeadSha = async (repo, branch = "master") => {
   const { data: repoBranch } = await octokit.repos.getBranch({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo,
     branch,
   });
@@ -80,7 +82,7 @@ const getLatestTag = async (repo) => {
   const {
     data: [latestTag],
   } = await octokit.repos.listTags({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo,
     per_page: 1,
   });
@@ -91,7 +93,7 @@ const getLatestTag = async (repo) => {
 async function closePRs() {
   // Close old auto PRs
   const { data: prs } = await octokit.pulls.list({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo: "notification-manifests",
     state: "open",
   });
@@ -99,13 +101,13 @@ async function closePRs() {
   prs.forEach(async (pr) => {
     if (pr.title.startsWith("[AUTO-PR]")) {
       await octokit.pulls.update({
-        owner: "cds-snc",
+        owner: GH_CDS,
         repo: "notification-manifests",
         pull_number: pr.number,
         state: "closed",
       });
       await octokit.git.deleteRef({
-        owner: "cds-snc",
+        owner: GH_CDS,
         repo: "notification-manifests",
         ref: `heads/${pr.head.ref}`,
       });
@@ -115,7 +117,7 @@ async function closePRs() {
 
 async function isNotLatestManifestsVersion() {
   const releaseConfig = await getContents(
-    "cds-snc",
+    GH_CDS,
     "notification-manifests",
     "env/production/kustomization.yaml"
   );
@@ -132,7 +134,7 @@ async function isNotLatestManifestsVersion() {
 
 async function isNotLatestTerraformVersion() {
   const prodWorkflow = await getContents(
-    "cds-snc",
+    GH_CDS,
     "notification-terraform",
     ".github/workflows/merge_to_main_production.yml"
   );
@@ -201,7 +203,7 @@ async function createPR(
   const logs = await buildLogs(projects);
 
   const ref = await octokit.git.createRef({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo: "notification-manifests",
     ref: `refs/heads/${branchName}`,
     sha: manifestsSha,
@@ -213,7 +215,7 @@ async function createPR(
     })
     .join(" and ");
   const update = await octokit.repos.createOrUpdateFile({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo: "notification-manifests",
     branch: branchName,
     sha: releaseConfig.sha,
@@ -223,7 +225,7 @@ async function createPR(
   });
 
   const pr = await octokit.pulls.create({
-    owner: "cds-snc",
+    owner: GH_CDS,
     repo: "notification-manifests",
     title: `[AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
     head: branchName,
@@ -263,13 +265,13 @@ async function hydrateWithSHAs(releaseConfig, projects) {
 
 async function run() {
   const releaseContent = await getContents(
-    "cds-snc",
+    GH_CDS,
     "notification-manifests",
     "env/production/kustomization.yaml"
   );
 
   const prTemplate = await getContents(
-    "cds-snc",
+    GH_CDS,
     "notification-manifests",
     ".github/PULL_REQUEST_TEMPLATE.md"
   );
