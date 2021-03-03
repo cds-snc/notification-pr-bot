@@ -14,7 +14,6 @@ const octokit = new github.GitHub(myToken);
 const GH_CDS = "cds-snc";
 const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
-
 const PROJECTS = [
   {
     name: "notification-api",
