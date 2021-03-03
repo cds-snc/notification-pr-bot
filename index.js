@@ -184,9 +184,9 @@ async function buildLogs(projects) {
 
 async function getContents(owner, repo, path) {
   const { data: data } = await octokit.repos.getContents({
-    owner: owner,
-    repo: repo,
-    path: path,
+    owner,
+    repo,
+    path,
   });
   return data;
 }
