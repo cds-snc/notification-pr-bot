@@ -45,7 +45,6 @@ const PROJECTS = [
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-// async function getCommitMessages(repo, sha) {
 const getCommitMessages = async (repo, sha) => {
   const { data: commits } = await octokit.repos.listCommits({
     owner: GH_CDS,
