@@ -149,13 +149,10 @@ async function isNotLatestTerraformVersion() {
   const prodWorkflow = await getContents(
     GH_CDS,
     "notification-terraform",
-    ".github/workflows/merge_to_main_production.yml"
+    ".github/workflows/infrastructure_version.txt"
   );
 
-  const workflowContent = Base64.decode(prodWorkflow.content);
-  const prodVersion = workflowContent.match(
-    /INFRASTRUCTURE_VERSION: '(.*)'/
-  )[1];
+  const prodVersion = Base64.decode(prodWorkflow.content);
   const latestVersion = (await getLatestTag("notification-terraform")).replace(
     "v",
     ""
@@ -32111,7 +32108,7 @@ module.exports = require("zlib");;
 /************************************************************************/
 /******/ 	// The module cache
 /******/ 	var __webpack_module_cache__ = {};
-/******/ 	
+/******/
 /******/ 	// The require function
 /******/ 	function __nccwpck_require__(moduleId) {
 /******/ 		// Check if module is in cache
@@ -32124,7 +32121,7 @@ module.exports = require("zlib");;
 /******/ 			// no module.loaded needed
 /******/ 			exports: {}
 /******/ 		};
-/******/ 	
+/******/
 /******/ 		// Execute the module function
 /******/ 		var threw = true;
 /******/ 		try {
@@ -32133,14 +32130,14 @@ module.exports = require("zlib");;
 /******/ 		} finally {
 /******/ 			if(threw) delete __webpack_module_cache__[moduleId];
 /******/ 		}
-/******/ 	
+/******/
 /******/ 		// Return the exports of the module
 /******/ 		return module.exports;
 /******/ 	}
-/******/ 	
+/******/
 /************************************************************************/
 /******/ 	/* webpack/runtime/compat */
-/******/ 	
+/******/
 /******/ 	__nccwpck_require__.ab = __dirname + "/";/************************************************************************/
 /******/ 	// module exports must be returned from runtime so entry inlining is disabled
 /******/ 	// startup

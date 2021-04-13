@@ -134,13 +134,10 @@ async function isNotLatestTerraformVersion() {
   const prodWorkflow = await getContents(
     GH_CDS,
     "notification-terraform",
-    ".github/workflows/merge_to_main_production.yml"
+    ".github/workflows/infrastructure_version.txt"
   );
 
-  const workflowContent = Base64.decode(prodWorkflow.content);
-  const prodVersion = workflowContent.match(
-    /INFRASTRUCTURE_VERSION: '(.*)'/
-  )[1];
+  const prodVersion = Base64.decode(prodWorkflow.content);
   const latestVersion = (await getLatestTag("notification-terraform")).replace(
     "v",
     ""
