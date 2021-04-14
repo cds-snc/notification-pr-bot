@@ -152,7 +152,7 @@ async function isNotLatestTerraformVersion() {
     ".github/workflows/infrastructure_version.txt"
   );
 
-  const prodVersion = Base64.decode(prodWorkflow.content);
+  const prodVersion = Base64.decode(prodWorkflow.content).trim();
   const latestVersion = (await getLatestTag("notification-terraform")).replace(
     "v",
     ""
