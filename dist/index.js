@@ -33,27 +33,22 @@ const PROJECTS = [
   {
     name: "notification-api",
     ecrName: "notify-api",
-    mainBranch: "master",
   },
   {
     name: "notification-admin",
     ecrName: "notify-admin",
-    mainBranch: "master",
   },
   {
     name: "notification-document-download-api",
     ecrName: "notify-document-download-api",
-    mainBranch: "master",
   },
   {
     name: "notification-document-download-frontend",
     ecrName: "notify-document-download-frontend",
-    mainBranch: "master",
   },
   {
     name: "notification-documentation",
     ecrName: "notify-documentation",
-    mainBranch: "main",
   },
 ];
 
@@ -82,11 +77,15 @@ const getCommitMessages = async (repo, sha) => {
     );
 };
 
-const getHeadSha = async (repo, branch = "master") => {
+const getHeadSha = async (repo) => {
+  const { data: repoDetails } = await octokit.repos.get({
+    owner: GH_CDS,
+    repo,
+  });
   const { data: repoBranch } = await octokit.repos.getBranch({
     owner: GH_CDS,
     repo,
-    branch,
+    branch: repoDetails.default_branch,
   });
   return repoBranch.commit.sha;
 };
@@ -209,7 +208,7 @@ async function createPR(
   newReleaseContentBlob
 ) {
   const branchName = `release-${new Date().getTime()}`;
-  const manifestsSha = await getHeadSha("notification-manifests", "main");
+  const manifestsSha = await getHeadSha("notification-manifests");
   const logs = await buildLogs(projects);
 
   const ref = await octokit.git.createRef({
@@ -255,10 +254,7 @@ async function hydrateWithSHAs(releaseConfig, projects) {
       const matchingProject = projects.find((project) =>
         image.newName.includes(project.ecrName)
       );
-      matchingProject.headSha = await getHeadSha(
-        matchingProject.name,
-        matchingProject.mainBranch
-      );
+      matchingProject.headSha = await getHeadSha(matchingProject.name);
       matchingProject.headUrl = getLatestImageUrl(
         matchingProject.ecrName,
         matchingProject.headSha
