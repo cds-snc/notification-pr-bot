@@ -13,7 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "@actions/github": "^2.2.0",
-    "js-base64": "^2.5.2",
+    "js-base64": "^3.7.1",
     "yaml": "^1.10.0"
   },
   "devDependencies": {
