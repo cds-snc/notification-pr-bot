@@ -8,27 +8,25 @@ const process = require("process");
 // Environmment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const myToken = process.env.TOKEN;
-
-
 const octokit = new github.GitHub(myToken);
 
 // Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const GH_CDS = "cds-snc";
 const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
+const PRODUCTION_ECR_ACCOUNT = process.env.PRODUCTION_ECR_ACCOUNT
 
 const PROJECTS = [
-  // {
-  //   name: "notification-api",
-  //   manifestFile: "env/production/kustomization.yaml",
-  //   ecrUrl: AWS_ECR_URL,
-  //   ecrName: "notify-api",
-  // },
-
+  {
+    name: "notification-api",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-api",
+  },
   // {
   //   name: "notification-admin",
-  //   manifestFile: "images.yaml",
-  //   ecrUrl: "private/notify",
+  //   manifestFile: "images.yaml",  // TODO: add the real file
+  //   ecrUrl: `${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify`,
   //   ecrName: "api-lambda",
   // },
   {
@@ -37,24 +35,24 @@ const PROJECTS = [
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-admin",
   },
-  // {
-  //   name: "notification-document-download-api",
-  //   manifestFile: "env/production/kustomization.yaml",
-  //   ecrUrl: AWS_ECR_URL,
-  //   ecrName: "notify-document-download-api",
-  // },
-  // {
-  //   name: "notification-document-download-frontend",
-  //   manifestFile: "env/production/kustomization.yaml",
-  //   ecrUrl: AWS_ECR_URL,
-  //   ecrName: "notify-document-download-frontend",
-  // },
-  // {
-  //   name: "notification-documentation",
-  //   manifestFile: "env/production/kustomization.yaml",
-  //   ecrUrl: AWS_ECR_URL,
-  //   ecrName: "notify-documentation",
-  // },
+  {
+    name: "notification-document-download-api",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-document-download-api",
+  },
+  {
+    name: "notification-document-download-frontend",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-document-download-frontend",
+  },
+  {
+    name: "notification-documentation",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-documentation",
+  },
 ];
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -106,8 +104,8 @@ const getLatestTag = async (repo) => {
   return latestTag.name;
 };
 
+// Close old auto PRs
 async function closePRs() {
-  // Close old auto PRs
   const { data: prs } = await octokit.pulls.list({
     owner: GH_CDS,
     repo: "notification-manifests",
@@ -115,7 +113,7 @@ async function closePRs() {
   });
 
   prs.forEach(async (pr) => {
-    if (pr.title.startsWith("[AUTO-PR]")) {
+    if (pr.title.startsWith("SJA TEST [AUTO-PR]")) {
       await octokit.pulls.update({
         owner: GH_CDS,
         repo: "notification-manifests",
@@ -197,11 +195,6 @@ async function buildLogs(projects) {
   return logs;
 }
 
-
-
-// let fileContents = fs.readFileSync('./images.yaml', 'utf8');
-// const releaseConfig = YAML.parse(fileContents);
-
 async function getContents(owner, repo, path) {
   const { data: data } = await octokit.repos.getContents({
     owner,
@@ -217,8 +210,6 @@ async function createPR(
   releaseContentArray
 ) {
   const branchName = `release-${new Date().getTime()}`;
-
-  console.log(`branchName: ${branchName}`)
   const manifestsSha = await getHeadSha("notification-manifests");
   const logs = await buildLogs(projects);
 
@@ -235,20 +226,17 @@ async function createPR(
     })
     .join(" and ");
 
-  const updates = releaseContentArray.map(async ({ releaseContent, newReleaseContentBlob }) => {
-
-
+  const updates = releaseContentArray.map(async ({ manifestFile, releaseContent, newReleaseContentBlob }) => {
     return await octokit.repos.createOrUpdateFile({
       owner: GH_CDS,
       repo: "notification-manifests",
       branch: branchName,
       sha: releaseContent.sha,
-      path: "env/production/kustomization.yaml", // need to change this to match the array item
+      path: manifestFile,
       message: `Updated manifests to ${manifestUpdates}`,
       content: newReleaseContentBlob,
     })
   })
-
   await Promise.all(updates)
 
   const pr = await octokit.pulls.create({
@@ -297,48 +285,37 @@ async function run() {
     ".github/PULL_REQUEST_TEMPLATE.md"
   );
   const issueContent = Base64.decode(prTemplate.content);
+  const manifestFiles = Array.from(new Set(PROJECTS.map(project => project.manifestFile)))
 
-  var releaseContentArray = PROJECTS.map(async (project) => {
+  var changesToManifestFiles = manifestFiles.map(async (manifestFile) => {
+    const projects = PROJECTS.filter(project => project.manifestFile == manifestFile)
 
     const releaseContent = await getContents(
       GH_CDS,
       "notification-manifests",
-      project.manifestFile
+      manifestFile
     );
-
     const releaseConfig = YAML.parse(Base64.decode(releaseContent.content));
 
     // Build up projects and update images with latest SHAs.
-    await hydrateWithSHAs(releaseConfig, [project]);
-
+    await hydrateWithSHAs(releaseConfig, projects);
     const newReleaseContentBlob = Base64.encode(YAML.stringify(releaseConfig));
 
-    return { releaseConfig, newReleaseContentBlob, releaseContent }
+    return { manifestFile, newReleaseContentBlob, releaseContent }
   })
 
 
-  releaseContentArray = await Promise.all(releaseContentArray)
+  changesToManifestFiles = await Promise.all(changesToManifestFiles)
 
   // Return if no new changes.
-  //   if (newReleaseContentBlob.trim() === releaseContent.content.trim()) {
-  //     return;
-  //   }
-
-
-  if (releaseContentArray.map(({ newReleaseContentBlob, releaseContent }) => {
+  if (changesToManifestFiles.map(({ newReleaseContentBlob, releaseContent }) => {
     newReleaseContentBlob.trim() === releaseContent.content.trim()
   }).all) {
-    console.log("no changes!!")
     return;
   }
 
-
-  console.log("changes!!")
-  //   await closePRs();
-  // await createPR(PROJECTS, issueContent, releaseContent, newReleaseContentBlob);
-
-  await createPR(PROJECTS, issueContent, releaseContentArray);
-
+  await closePRs();
+  await createPR(PROJECTS, issueContent, changesToManifestFiles);
 }
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
