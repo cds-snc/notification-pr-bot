@@ -1,4 +1,5 @@
 // Imports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+const fs = require('fs');
 const github = require("@actions/github");
 const Base64 = require("js-base64").Base64;
 const YAML = require("yaml");
@@ -17,22 +18,38 @@ const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 const PROJECTS = [
   {
     name: "notification-api",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-api",
   },
+  // {
+  //   name: "notification-admin",
+  //   manifestFile: "images.yaml",
+  //   ecrUrl: "private/notify",
+  //   ecrName: "api-lambda",
+  // },
   {
     name: "notification-admin",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-admin",
   },
   {
     name: "notification-document-download-api",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-document-download-api",
   },
   {
     name: "notification-document-download-frontend",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-document-download-frontend",
   },
   {
     name: "notification-documentation",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-documentation",
   },
 ];
@@ -56,8 +73,7 @@ const getCommitMessages = async (repo, sha) => {
     .slice(0, index)
     .map(
       (c) =>
-        `- [${c.commit.message.split("\n\n")[0]}](${c.html_url}) by ${
-          c.commit.author.name
+        `- [${c.commit.message.split("\n\n")[0]}](${c.html_url}) by ${c.commit.author.name
         }`
     );
 };
@@ -154,7 +170,8 @@ function getSha(imageName) {
 }
 
 function getLatestImageUrl(projectName, headSha) {
-  return `${AWS_ECR_URL}/${projectName}:${shortSha(headSha)}`;
+  const ecrUrl = PROJECTS.filter(project => project["ecrName"] == projectName)[0].ecrUrl
+  return `${ecrUrl}/${projectName}:${shortSha(headSha)}`;
 }
 
 async function buildLogs(projects) {
@@ -176,6 +193,11 @@ async function buildLogs(projects) {
   }
   return logs;
 }
+
+
+
+// let fileContents = fs.readFileSync('./images.yaml', 'utf8');
+// const releaseConfig = YAML.parse(fileContents);
 
 async function getContents(owner, repo, path) {
   const { data: data } = await octokit.repos.getContents({
@@ -239,6 +261,9 @@ async function hydrateWithSHAs(releaseConfig, projects) {
       const matchingProject = projects.find((project) =>
         image.newName.includes(project.ecrName)
       );
+      if (!matchingProject) {
+        return null
+      }
       matchingProject.headSha = await getHeadSha(matchingProject.name);
       matchingProject.headUrl = getLatestImageUrl(
         matchingProject.ecrName,
@@ -255,32 +280,54 @@ async function hydrateWithSHAs(releaseConfig, projects) {
 // Main ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 async function run() {
-  const releaseContent = await getContents(
-    GH_CDS,
-    "notification-manifests",
-    "env/production/kustomization.yaml"
-  );
-
   const prTemplate = await getContents(
     GH_CDS,
     "notification-manifests",
     ".github/PULL_REQUEST_TEMPLATE.md"
   );
-
-  const releaseConfig = YAML.parse(Base64.decode(releaseContent.content));
   const issueContent = Base64.decode(prTemplate.content);
 
-  // Build up projects and update images with latest SHAs.
-  await hydrateWithSHAs(releaseConfig, PROJECTS);
+  releaseContentArray = PROJECTS.map(async (project) => {
+
+    const releaseContent = await getContents(
+      GH_CDS,
+      "notification-manifests",
+      project.manifestFile
+    );
+
+    const releaseConfig = YAML.parse(Base64.decode(releaseContent.content));
+
+    // Build up projects and update images with latest SHAs.
+    await hydrateWithSHAs(releaseConfig, [project]);
+
+    const newReleaseContentBlob = Base64.encode(YAML.stringify(releaseConfig));
+
+    console.log(`Done ${project.name}`)
+    return { releaseContent, newReleaseContentBlob }
+  })
+
+
+  console.log("After loop!!")
 
   // Return if no new changes.
-  const newReleaseContentBlob = Base64.encode(YAML.stringify(releaseConfig));
-  if (newReleaseContentBlob.trim() === releaseContent.content.trim()) {
+  //   if (newReleaseContentBlob.trim() === releaseContent.content.trim()) {
+  //     return;
+  //   }
+
+
+  if (releaseContentArray.map(({ releaseContent, newReleaseContentBlob }) => {
+    newReleaseContentBlob.trim() === releaseContent.content.trim()
+  }).all) {
+    console.log("no changes!!")
     return;
   }
 
-  await closePRs();
-  await createPR(PROJECTS, issueContent, releaseContent, newReleaseContentBlob);
+
+  console.log("changes!!")
+  //   await closePRs();
+  // await createPR(PROJECTS, issueContent, releaseContent, newReleaseContentBlob);
+
+
 }
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
