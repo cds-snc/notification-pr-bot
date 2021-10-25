@@ -8,6 +8,8 @@ const process = require("process");
 // Environmment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const myToken = process.env.TOKEN;
+
+
 const octokit = new github.GitHub(myToken);
 
 // Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -287,7 +289,7 @@ async function run() {
   );
   const issueContent = Base64.decode(prTemplate.content);
 
-  releaseContentArray = PROJECTS.map(async (project) => {
+  var releaseContentArray = PROJECTS.map(async (project) => {
 
     const releaseContent = await getContents(
       GH_CDS,
@@ -306,6 +308,8 @@ async function run() {
     return { releaseContent, newReleaseContentBlob }
   })
 
+
+  releaseContentArray = await Promise.all(releaseContentArray)
 
   console.log("After loop!!")
 
@@ -327,6 +331,7 @@ async function run() {
   //   await closePRs();
   // await createPR(PROJECTS, issueContent, releaseContent, newReleaseContentBlob);
 
+  await createPR(PROJECTS, issueContent, releaseContent, newReleaseContentBlob);
 
 }
 
