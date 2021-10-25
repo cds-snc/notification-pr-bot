@@ -18,12 +18,13 @@ const GH_CDS = "cds-snc";
 const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
 const PROJECTS = [
-  {
-    name: "notification-api",
-    manifestFile: "env/production/kustomization.yaml",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-api",
-  },
+  // {
+  //   name: "notification-api",
+  //   manifestFile: "env/production/kustomization.yaml",
+  //   ecrUrl: AWS_ECR_URL,
+  //   ecrName: "notify-api",
+  // },
+
   // {
   //   name: "notification-admin",
   //   manifestFile: "images.yaml",
@@ -36,24 +37,24 @@ const PROJECTS = [
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-admin",
   },
-  {
-    name: "notification-document-download-api",
-    manifestFile: "env/production/kustomization.yaml",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-document-download-api",
-  },
-  {
-    name: "notification-document-download-frontend",
-    manifestFile: "env/production/kustomization.yaml",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-document-download-frontend",
-  },
-  {
-    name: "notification-documentation",
-    manifestFile: "env/production/kustomization.yaml",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-documentation",
-  },
+  // {
+  //   name: "notification-document-download-api",
+  //   manifestFile: "env/production/kustomization.yaml",
+  //   ecrUrl: AWS_ECR_URL,
+  //   ecrName: "notify-document-download-api",
+  // },
+  // {
+  //   name: "notification-document-download-frontend",
+  //   manifestFile: "env/production/kustomization.yaml",
+  //   ecrUrl: AWS_ECR_URL,
+  //   ecrName: "notify-document-download-frontend",
+  // },
+  // {
+  //   name: "notification-documentation",
+  //   manifestFile: "env/production/kustomization.yaml",
+  //   ecrUrl: AWS_ECR_URL,
+  //   ecrName: "notify-documentation",
+  // },
 ];
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -213,10 +214,11 @@ async function getContents(owner, repo, path) {
 async function createPR(
   projects,
   issueContent,
-  releaseConfig,
-  newReleaseContentBlob
+  releaseContentArray
 ) {
   const branchName = `release-${new Date().getTime()}`;
+
+  console.log(`branchName: ${branchName}`)
   const manifestsSha = await getHeadSha("notification-manifests");
   const logs = await buildLogs(projects);
 
@@ -232,20 +234,27 @@ async function createPR(
       return `${project.name}:${shortSha(project.headSha)}`;
     })
     .join(" and ");
-  const update = await octokit.repos.createOrUpdateFile({
-    owner: GH_CDS,
-    repo: "notification-manifests",
-    branch: branchName,
-    sha: releaseConfig.sha,
-    path: "env/production/kustomization.yaml",
-    message: `Updated manifests to ${manifestUpdates}`,
-    content: newReleaseContentBlob,
-  });
+
+  const updates = releaseContentArray.map(async ({ releaseContent, newReleaseContentBlob }) => {
+
+
+    return await octokit.repos.createOrUpdateFile({
+      owner: GH_CDS,
+      repo: "notification-manifests",
+      branch: branchName,
+      sha: releaseContent.sha,
+      path: "env/production/kustomization.yaml", // need to change this to match the array item
+      message: `Updated manifests to ${manifestUpdates}`,
+      content: newReleaseContentBlob,
+    })
+  })
+
+  await Promise.all(updates)
 
   const pr = await octokit.pulls.create({
     owner: GH_CDS,
     repo: "notification-manifests",
-    title: `[AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
+    title: `SJA TEST [AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
     head: branchName,
     base: "main",
     body: issueContent.replace(
@@ -254,7 +263,7 @@ async function createPR(
     ),
     draft: true,
   });
-  return Promise.all([ref, update, pr]);
+  return Promise.all([ref, pr] + updates);
 }
 
 async function hydrateWithSHAs(releaseConfig, projects) {
@@ -304,14 +313,11 @@ async function run() {
 
     const newReleaseContentBlob = Base64.encode(YAML.stringify(releaseConfig));
 
-    console.log(`Done ${project.name}`)
-    return { releaseContent, newReleaseContentBlob }
+    return { releaseConfig, newReleaseContentBlob, releaseContent }
   })
 
 
   releaseContentArray = await Promise.all(releaseContentArray)
-
-  console.log("After loop!!")
 
   // Return if no new changes.
   //   if (newReleaseContentBlob.trim() === releaseContent.content.trim()) {
@@ -319,7 +325,7 @@ async function run() {
   //   }
 
 
-  if (releaseContentArray.map(({ releaseContent, newReleaseContentBlob }) => {
+  if (releaseContentArray.map(({ newReleaseContentBlob, releaseContent }) => {
     newReleaseContentBlob.trim() === releaseContent.content.trim()
   }).all) {
     console.log("no changes!!")
@@ -331,7 +337,7 @@ async function run() {
   //   await closePRs();
   // await createPR(PROJECTS, issueContent, releaseContent, newReleaseContentBlob);
 
-  await createPR(PROJECTS, issueContent, releaseContent, newReleaseContentBlob);
+  await createPR(PROJECTS, issueContent, releaseContentArray);
 
 }
 
