@@ -1,23 +1,11 @@
-// Imports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-const fs = require('fs');
-const github = require("@actions/github");
 const Base64 = require("js-base64").Base64;
 const YAML = require("yaml");
 const process = require("process");
-
 const {
-  getContents,
-  getHeadSha,
   getSha,
   getLatestImageUrl
 } = require("./utils");
-
-const { closePRs, createPR } = require("./prUtils")
-
-// Environmment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-const myToken = process.env.TOKEN;
-const octokit = new github.GitHub(myToken);
+const { closePRs, createPR, getContents, getHeadSha } = require("./githubUtils")
 
 // Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
