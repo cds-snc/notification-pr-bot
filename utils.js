@@ -13,27 +13,14 @@ const GH_CDS = "cds-snc";
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-const getCommitMessages = async (repo, sha) => {
-  const { data: commits } = await octokit.repos.listCommits({
-    owner: GH_CDS,
+async function getContents(owner, repo, path) {
+  const { data: data } = await octokit.repos.getContents({
+    owner,
     repo,
-    per_page: 50,
+    path,
   });
-  let index = 0;
-  for (let i = 0; i < 50; i++) {
-    if (commits[i].sha.startsWith(sha)) {
-      index = i;
-      break;
-    }
-  }
-  return commits
-    .slice(0, index)
-    .map(
-      (c) =>
-        `- [${c.commit.message.split("\n\n")[0]}](${c.html_url}) by ${c.commit.author.name
-        }`
-    );
-};
+  return data;
+}
 
 const getHeadSha = async (repo) => {
   const { data: repoDetails } = await octokit.repos.get({
@@ -59,9 +46,59 @@ const getLatestTag = async (repo) => {
 
   return latestTag.name;
 };
+async function isNotLatestManifestsVersion() {
+  const releaseConfig = await getContents(
+    GH_CDS,
+    "notification-manifests",
+    "env/production/kustomization.yaml"
+  );
+
+  const releaseContent = Base64.decode(releaseConfig.content);
+  const prodVersion = releaseContent.match(
+    /notification-manifests\/\/base\?ref=(.*)/
+  )[1];
+
+  const latestVersion = await getLatestTag("notification-manifests");
+
+  return prodVersion != latestVersion;
+}
+
+async function isNotLatestTerraformVersion() {
+  const prodWorkflow = await getContents(
+    GH_CDS,
+    "notification-terraform",
+    ".github/workflows/infrastructure_version.txt"
+  );
+
+  const prodVersion = Base64.decode(prodWorkflow.content).trim();
+  const latestVersion = (await getLatestTag("notification-terraform")).replace(
+    "v",
+    ""
+  );
+
+  return prodVersion != latestVersion;
+}
+
+function shortSha(fullSha) {
+  return fullSha.slice(0, 7);
+}
+
+function getSha(imageName) {
+  return imageName.split(":").slice(-1)[0];
+}
+
+function getLatestImageUrl(PROJECTS, projectName, headSha) {
+  const ecrUrl = PROJECTS.filter(project => project["ecrName"] == projectName)[0].ecrUrl
+  return `${ecrUrl}/${projectName}:${shortSha(headSha)}`;
+}
 
 module.exports = {
-  getCommitMessages: getCommitMessages,
-  getHeadSha: getHeadSha,
-  getLatestTag: getLatestTag
+  getContents,
+  getHeadSha,
+  getLatestTag,
+  shortSha,
+  getSha,
+  getLatestImageUrl,
+  isNotLatestManifestsVersion,
+  isNotLatestTerraformVersion
 };
