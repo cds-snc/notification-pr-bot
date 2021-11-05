@@ -91,7 +91,11 @@ async function createPR(
 }
 
 async function buildLogs(projects) {
-  let logs = projects.map(async (project) => {
+  // pick one project per repo
+  // otherwise the list of repo changes will be repeated
+  const uniqueByRepo = [...new Map(projects.map(item => [item.name, item])).values()];
+
+  let logs = uniqueByRepo.map(async (project) => {
     const msgsCommits = await getCommitMessages(project.name, project.oldSha);
     const strCommits = msgsCommits.join("\n");
     const projectName = project.name.toUpperCase();
