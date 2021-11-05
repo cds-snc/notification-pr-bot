@@ -1,16 +1,15 @@
-// Imports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 const github = require("@actions/github");
 const process = require("process");
 
-// Environmment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const myToken = process.env.TOKEN;
 const octokit = new github.GitHub(myToken);
-
 const GH_CDS = "cds-snc";
+const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
+// Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-// Close old auto PRs
 async function closePRs(owner) {
   const { data: prs } = await octokit.pulls.list({
     owner: owner,
@@ -35,7 +34,6 @@ async function closePRs(owner) {
   });
 }
 
-
 async function createPR(
   owner,
   projects,
@@ -55,7 +53,7 @@ async function createPR(
 
   const manifestUpdates = projects
     .map((project) => {
-      return `${project.name}:${project.shortSha}`;
+      return `${project.repoName}:${project.shortSha}`;
     })
     .join(" and ");
 
@@ -86,15 +84,17 @@ async function createPR(
   return Promise.all([ref, pr]);
 }
 
-async function buildLogs(projects) {
-  // pick one project per repo
-  // otherwise the list of repo changes will be repeated
-  const uniqueByRepo = [...new Map(projects.map(item => [item.name, item])).values()];
+// given an array of objects and a key, return one item for each distinct value of the keys
+function uniqueByKey(items, key) {
+  return [...new Map(items.map(item => [item[key], item])).values()];
+}
 
+async function buildLogs(projects) {
+  const uniqueByRepo = uniqueByKey(projects, "repoName");
   let logs = uniqueByRepo.map(async (project) => {
-    const msgsCommits = await getCommitMessages(project.name, project.oldSha);
+    const msgsCommits = await getCommitMessages(project.repoName, project.oldSha);
     const strCommits = msgsCommits.join("\n");
-    const projectName = project.name.toUpperCase();
+    const projectName = project.repoName.toUpperCase();
     return `${projectName}\n\n${strCommits}`;
   });
   logs = await Promise.all(logs);
@@ -199,4 +199,4 @@ async function isNotLatestTerraformVersion() {
 }
 
 
-module.exports = { closePRs, createPR, getContents, getHeadSha }
+module.exports = { GH_CDS, AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha }

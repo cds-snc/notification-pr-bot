@@ -1,50 +1,48 @@
 const Base64 = require("js-base64").Base64;
-const { closePRs, createPR, getContents, getHeadSha } = require("./githubUtils")
+const { GH_CDS, AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = require("./githubUtils")
 
-// Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-const GH_CDS = "cds-snc";
-const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
+// Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const PROJECTS = [
   {
-    name: "notification-api",
+    repoName: "notification-api",
     manifestFile: "env/production/kustomization.yaml",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-api",
   },
   {
-    name: "notification-api",
+    repoName: "notification-api",
     manifestFile: ".github/workflows/merge_to_main_production.yaml",
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
     ecrName: "api-lambda",
   },
   {
-    name: "notification-admin",
+    repoName: "notification-admin",
     manifestFile: "env/production/kustomization.yaml",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-admin",
   },
   {
-    name: "notification-document-download-api",
+    repoName: "notification-document-download-api",
     manifestFile: "env/production/kustomization.yaml",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-document-download-api",
   },
   {
-    name: "notification-document-download-frontend",
+    repoName: "notification-document-download-frontend",
     manifestFile: "env/production/kustomization.yaml",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-document-download-frontend",
   },
   {
-    name: "notification-documentation",
+    repoName: "notification-documentation",
     manifestFile: "env/production/kustomization.yaml",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-documentation",
   },
 ];
 
+// Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 function shortSha(fullSha) {
   return fullSha.slice(0, 7);
@@ -62,7 +60,7 @@ function getLatestImageUrl(PROJECTS, projectName, headSha) {
 async function hydrateWithSHAs() {
   return await Promise.all(
     PROJECTS.map(async (project) => {
-      project.headSha = await getHeadSha(project.name);
+      project.headSha = await getHeadSha(project.repoName);
       project.shortSha = shortSha(project.headSha)
       project.headUrl = getLatestImageUrl(
         PROJECTS,
