@@ -63,14 +63,8 @@ async function createPR(
     })
     .join(" and ");
 
-  // releaseContentArray.forEach(({ manifestFile, releaseContent, newReleaseContentBlob }) => {
-
   for (const { manifestFile, releaseContent, newReleaseContentBlob } of releaseContentArray) {
-
-
-    console.log(JSON.stringify({ manifestFile, sha: releaseContent.sha }))
-
-    data = {
+    await octokit.repos.createOrUpdateFile({
       owner: owner,
       repo: "notification-manifests",
       branch: branchName,
@@ -78,23 +72,8 @@ async function createPR(
       path: manifestFile,
       message: `Updated manifests to ${manifestUpdates}`,
       content: newReleaseContentBlob,
-    }
-
-    console.log(data)
-    const xx = await octokit.repos.createOrUpdateFile(data)
-    console.log("xx")
-    console.log(xx)
+    })
   }
-
-
-  // console.log("---------")
-  // console.log(updates)
-
-  // await Promise.all(updates)
-
-  // console.log(updates)
-
-  console.log("----- 2 ----")
 
   const pr = await octokit.pulls.create({
     owner: owner,

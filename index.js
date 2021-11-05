@@ -12,7 +12,6 @@ const { closePRs, createPR, getContents, getHeadSha } = require("./githubUtils")
 
 const GH_CDS = "cds-snc";
 const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
-const PRODUCTION_ECR_ACCOUNT = process.env.PRODUCTION_ECR_ACCOUNT
 
 const PROJECTS = [
   {
@@ -23,7 +22,7 @@ const PROJECTS = [
   },
   {
     name: "notification-api",
-    manifestFile: ".github/workflows/merge_to_main_production.yaml",  // TODO: add the real file
+    manifestFile: ".github/workflows/merge_to_main_production.yaml",
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
     ecrName: "api-lambda",
   },
@@ -54,32 +53,7 @@ const PROJECTS = [
 ];
 
 
-// async function hydrateWithSHAs(releaseConfig, projects) {
-//   return await Promise.all(
-//     releaseConfig.images.map(async (image) => {
-//       const matchingProject = projects.find((project) =>
-//         image.newName.includes(project.ecrName)
-//       );
-//       if (!matchingProject) {
-//         return null
-//       }
-//       matchingProject.headSha = await getHeadSha(matchingProject.name);
-//       matchingProject.headUrl = getLatestImageUrl(
-//         PROJECTS,
-//         matchingProject.ecrName,
-//         matchingProject.headSha
-//       );
-//       matchingProject.oldSha = getSha(image.newName);
-//       matchingProject.oldUrl = image.newName;
-//       image.newName = matchingProject.headUrl;
-//       return matchingProject;
-//     })
-//   );
-// }
-
-
-
-async function addSHAsToProjects() {
+async function hydrateWithSHAs() {
   return await Promise.all(
     PROJECTS.map(async (matchingProject) => {
       matchingProject.headSha = await getHeadSha(matchingProject.name);
@@ -122,9 +96,7 @@ async function run() {
   const issueContent = Base64.decode(prTemplate.content);
   const manifestFiles = Array.from(new Set(PROJECTS.map(project => project.manifestFile)))
 
-
-  await addSHAsToProjects();
-
+  await hydrateWithSHAs();
 
   var changesToManifestFiles = manifestFiles.map(async (manifestFile) => {
     const projects = PROJECTS.filter(project => project.manifestFile == manifestFile)
@@ -134,21 +106,13 @@ async function run() {
       "notification-manifests",
       manifestFile
     );
-    // const releaseConfig = YAML.parse(Base64.decode(releaseContent.content));
 
     var fileContents = Base64.decode(releaseContent.content)
-
     projects.forEach((project) => {
       fileContents = UpdateContents(fileContents, project)
     })
 
-    // Build up projects and update images with latest SHAs.
-    // await hydrateWithSHAs(releaseConfig, projects);
-
-
-    // const newReleaseContentBlob = Base64.encode(YAML.stringify(releaseConfig));
     const newReleaseContentBlob = Base64.encode(fileContents);
-    // const newReleaseContentBlob = Base64.encode("hi there");
 
     return { manifestFile, newReleaseContentBlob, releaseContent }
   })
