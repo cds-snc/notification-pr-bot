@@ -1,5 +1,5 @@
 const Base64 = require("js-base64").Base64;
-const { GH_CDS, AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = require("./githubUtils")
+const { AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = require("./githubUtils")
 
 // Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -69,7 +69,6 @@ async function hydrateWithSHAs() {
       );
 
       const releaseContent = await getContents(
-        GH_CDS,
         "notification-manifests",
         project.manifestFile
       );
@@ -91,7 +90,6 @@ function UpdateContents(content, project) {
 
 async function run() {
   const prTemplate = await getContents(
-    GH_CDS,
     "notification-manifests",
     ".github/PULL_REQUEST_TEMPLATE.md"
   );
@@ -104,7 +102,6 @@ async function run() {
     const projects = PROJECTS.filter(project => project.manifestFile == manifestFile)
 
     const releaseContent = await getContents(
-      GH_CDS,
       "notification-manifests",
       manifestFile
     );
@@ -128,8 +125,8 @@ async function run() {
     return;
   }
 
-  await closePRs(GH_CDS);
-  await createPR(GH_CDS, PROJECTS, issueContent, changesToManifestFiles);
+  await closePRs();
+  await createPR(PROJECTS, issueContent, changesToManifestFiles);
 }
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

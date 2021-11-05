@@ -10,9 +10,9 @@ const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-async function closePRs(owner) {
+async function closePRs() {
   const { data: prs } = await octokit.pulls.list({
-    owner: owner,
+    owner: GH_CDS,
     repo: "notification-manifests",
     state: "open",
   });
@@ -20,13 +20,13 @@ async function closePRs(owner) {
   prs.forEach(async (pr) => {
     if (pr.title.startsWith("SJA TEST [AUTO-PR]")) {
       await octokit.pulls.update({
-        owner: owner,
+        owner: GH_CDS,
         repo: "notification-manifests",
         pull_number: pr.number,
         state: "closed",
       });
       await octokit.git.deleteRef({
-        owner: owner,
+        owner: GH_CDS,
         repo: "notification-manifests",
         ref: `heads/${pr.head.ref}`,
       });
@@ -35,7 +35,6 @@ async function closePRs(owner) {
 }
 
 async function createPR(
-  owner,
   projects,
   issueContent,
   releaseContentArray
@@ -45,7 +44,7 @@ async function createPR(
   const logs = await buildLogs(projects);
 
   const ref = await octokit.git.createRef({
-    owner: owner,
+    owner: GH_CDS,
     repo: "notification-manifests",
     ref: `refs/heads/${branchName}`,
     sha: manifestsSha,
@@ -59,7 +58,7 @@ async function createPR(
 
   for (const { manifestFile, releaseContent, newReleaseContentBlob } of releaseContentArray) {
     await octokit.repos.createOrUpdateFile({
-      owner: owner,
+      owner: GH_CDS,
       repo: "notification-manifests",
       branch: branchName,
       sha: releaseContent.sha,
@@ -70,7 +69,7 @@ async function createPR(
   }
 
   const pr = await octokit.pulls.create({
-    owner: owner,
+    owner: GH_CDS,
     repo: "notification-manifests",
     title: `SJA TEST [AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
     head: branchName,
@@ -132,9 +131,9 @@ const getCommitMessages = async (repo, sha) => {
     );
 };
 
-async function getContents(owner, repo, path) {
+async function getContents(repo, path) {
   const { data: data } = await octokit.repos.getContents({
-    owner,
+    owner: GH_CDS,
     repo,
     path,
   });
@@ -167,7 +166,6 @@ const getLatestTag = async (repo) => {
 };
 async function isNotLatestManifestsVersion() {
   const releaseConfig = await getContents(
-    GH_CDS,
     "notification-manifests",
     "env/production/kustomization.yaml"
   );
@@ -184,7 +182,6 @@ async function isNotLatestManifestsVersion() {
 
 async function isNotLatestTerraformVersion() {
   const prodWorkflow = await getContents(
-    GH_CDS,
     "notification-terraform",
     ".github/workflows/infrastructure_version.txt"
   );
