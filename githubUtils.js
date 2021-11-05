@@ -63,7 +63,10 @@ async function createPR(
     })
     .join(" and ");
 
-  const updates = releaseContentArray.map(async ({ manifestFile, releaseContent, newReleaseContentBlob }) => {
+  // releaseContentArray.forEach(({ manifestFile, releaseContent, newReleaseContentBlob }) => {
+
+  for (const { manifestFile, releaseContent, newReleaseContentBlob } of releaseContentArray) {
+
 
     console.log(JSON.stringify({ manifestFile, sha: releaseContent.sha }))
 
@@ -78,11 +81,20 @@ async function createPR(
     }
 
     console.log(data)
-    return await octokit.repos.createOrUpdateFile(data)
-  })
+    const xx = await octokit.repos.createOrUpdateFile(data)
+    console.log("xx")
+    console.log(xx)
+  }
 
 
-  await Promise.all(updates)
+  // console.log("---------")
+  // console.log(updates)
+
+  // await Promise.all(updates)
+
+  // console.log(updates)
+
+  console.log("----- 2 ----")
 
   const pr = await octokit.pulls.create({
     owner: owner,
@@ -96,7 +108,7 @@ async function createPR(
     ),
     draft: true,
   });
-  return Promise.all([ref, pr] + updates);
+  return Promise.all([ref, pr]);
 }
 
 async function buildLogs(projects) {

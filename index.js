@@ -15,42 +15,42 @@ const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 const PRODUCTION_ECR_ACCOUNT = process.env.PRODUCTION_ECR_ACCOUNT
 
 const PROJECTS = [
-  // {
-  //   name: "notification-api",
-  //   manifestFile: "env/production/kustomization.yaml",
-  //   ecrUrl: AWS_ECR_URL,
-  //   ecrName: "notify-api",
-  // },
+  {
+    name: "notification-api",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-api",
+  },
   {
     name: "notification-api",
     manifestFile: ".github/workflows/merge_to_main_production.yaml",  // TODO: add the real file
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
     ecrName: "api-lambda",
   },
-  // {
-  //   name: "notification-admin",
-  //   manifestFile: "env/production/kustomization.yaml",
-  //   ecrUrl: AWS_ECR_URL,
-  //   ecrName: "notify-admin",
-  // },
-  // {
-  //   name: "notification-document-download-api",
-  //   manifestFile: "env/production/kustomization.yaml",
-  //   ecrUrl: AWS_ECR_URL,
-  //   ecrName: "notify-document-download-api",
-  // },
-  // {
-  //   name: "notification-document-download-frontend",
-  //   manifestFile: "env/production/kustomization.yaml",
-  //   ecrUrl: AWS_ECR_URL,
-  //   ecrName: "notify-document-download-frontend",
-  // },
-  // {
-  //   name: "notification-documentation",
-  //   manifestFile: "env/production/kustomization.yaml",
-  //   ecrUrl: AWS_ECR_URL,
-  //   ecrName: "notify-documentation",
-  // },
+  {
+    name: "notification-admin",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-admin",
+  },
+  {
+    name: "notification-document-download-api",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-document-download-api",
+  },
+  {
+    name: "notification-document-download-frontend",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-document-download-frontend",
+  },
+  {
+    name: "notification-documentation",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-documentation",
+  },
 ];
 
 
