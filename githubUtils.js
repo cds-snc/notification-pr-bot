@@ -2,10 +2,6 @@
 const github = require("@actions/github");
 const process = require("process");
 
-const {
-  shortSha,
-} = require("./utils");
-
 // Environmment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const myToken = process.env.TOKEN;
@@ -59,7 +55,7 @@ async function createPR(
 
   const manifestUpdates = projects
     .map((project) => {
-      return `${project.name}:${shortSha(project.headSha)}`;
+      return `${project.name}:${project.shortSha}`;
     })
     .join(" and ");
 

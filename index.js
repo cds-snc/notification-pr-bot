@@ -1,11 +1,4 @@
 const Base64 = require("js-base64").Base64;
-const YAML = require("yaml");
-const process = require("process");
-const {
-  getSha,
-  shortSha,
-  getLatestImageUrl
-} = require("./utils");
 const { closePRs, createPR, getContents, getHeadSha } = require("./githubUtils")
 
 // Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -53,33 +46,44 @@ const PROJECTS = [
 ];
 
 
+function shortSha(fullSha) {
+  return fullSha.slice(0, 7);
+}
+
+function getSha(imageName) {
+  return imageName.split(":").slice(-1)[0];
+}
+
+function getLatestImageUrl(PROJECTS, projectName, headSha) {
+  const ecrUrl = PROJECTS.filter(project => project["ecrName"] == projectName)[0].ecrUrl
+  return `${ecrUrl}/${projectName}:${shortSha(headSha)}`;
+}
+
 async function hydrateWithSHAs() {
   return await Promise.all(
-    PROJECTS.map(async (matchingProject) => {
-      matchingProject.headSha = await getHeadSha(matchingProject.name);
-      matchingProject.headUrl = getLatestImageUrl(
+    PROJECTS.map(async (project) => {
+      project.headSha = await getHeadSha(project.name);
+      project.shortSha = shortSha(project.headSha)
+      project.headUrl = getLatestImageUrl(
         PROJECTS,
-        matchingProject.ecrName,
-        matchingProject.headSha
+        project.ecrName,
+        project.headSha
       );
 
       const releaseContent = await getContents(
         GH_CDS,
         "notification-manifests",
-        matchingProject.manifestFile
+        project.manifestFile
       );
 
       const originalFileContents = Base64.decode(releaseContent.content)
-      const re = new RegExp(`${matchingProject.ecrName}:\\S*`, "g");
-      const originalRepo = originalFileContents.match(re)[0]
-
-      matchingProject.oldSha = originalRepo.split(":").slice(-1)[0];
-      matchingProject.oldUrl = originalRepo;
-      return matchingProject;
+      const re = new RegExp(`${project.ecrName}:\\S*`, "g");
+      project.oldUrl = originalFileContents.match(re)[0]
+      project.oldSha = getSha(project.oldUrl);
+      return project;
     })
   );
 }
-
 
 function UpdateContents(content, project) {
   return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
@@ -117,7 +121,6 @@ async function run() {
     return { manifestFile, newReleaseContentBlob, releaseContent }
   })
 
-
   changesToManifestFiles = await Promise.all(changesToManifestFiles)
 
   // Return if no new changes.
@@ -129,8 +132,6 @@ async function run() {
 
   await closePRs(GH_CDS);
   await createPR(GH_CDS, PROJECTS, issueContent, changesToManifestFiles);
-
-  console.log("done")
 }
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
