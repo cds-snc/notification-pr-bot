@@ -1,5 +1,5 @@
 const Base64 = require("js-base64").Base64;
-const { AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = require("./githubUtils")
+const { AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = require("./github")
 
 // Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
