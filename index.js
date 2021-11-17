@@ -52,18 +52,18 @@ function getSha(imageName) {
   return imageName.split(":").slice(-1)[0];
 }
 
-function getLatestImageUrl(PROJECTS, projectName, headSha) {
-  const ecrUrl = PROJECTS.filter(project => project["ecrName"] == projectName)[0].ecrUrl
+function getLatestImageUrl(projects, projectName, headSha) {
+  const ecrUrl = projects.filter(project => project["ecrName"] == projectName)[0].ecrUrl
   return `${ecrUrl}/${projectName}:${shortSha(headSha)}`;
 }
 
-async function hydrateWithSHAs() {
+async function hydrateWithSHAs(projects) {
   return await Promise.all(
-    PROJECTS.map(async (project) => {
+    projects.map(async (project) => {
       project.headSha = await getHeadSha(project.repoName);
       project.shortSha = shortSha(project.headSha)
       project.headUrl = getLatestImageUrl(
-        PROJECTS,
+        projects,
         project.ecrName,
         project.headSha
       );
@@ -88,18 +88,18 @@ function updateReleaseSha(content, project) {
 
 // Main ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-async function run() {
+async function run(projects) {
   const prTemplate = await getContents(
     "notification-manifests",
     ".github/PULL_REQUEST_TEMPLATE.md"
   );
   const issueContent = Base64.decode(prTemplate.content);
-  const manifestFiles = Array.from(new Set(PROJECTS.map(project => project.manifestFile)))
+  const manifestFiles = Array.from(new Set(projects.map(project => project.manifestFile)))
 
-  await hydrateWithSHAs();
+  await hydrateWithSHAs(projects);
 
   var changesToManifestFiles = manifestFiles.map(async (manifestFile) => {
-    const projects = PROJECTS.filter(project => project.manifestFile == manifestFile)
+    const projectsForFile = projects.filter(project => project.manifestFile == manifestFile)
 
     const releaseContent = await getContents(
       "notification-manifests",
@@ -107,7 +107,7 @@ async function run() {
     );
 
     var fileContents = Base64.decode(releaseContent.content)
-    projects.forEach((project) => {
+    projectsForFile.forEach((project) => {
       fileContents = updateReleaseSha(fileContents, project)
     })
 
@@ -126,8 +126,8 @@ async function run() {
   }
 
   await closePRs();
-  await createPR(PROJECTS, issueContent, changesToManifestFiles);
+  await createPR(projects, issueContent, changesToManifestFiles);
 }
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-run();
+run(PROJECTS);
