@@ -82,7 +82,7 @@ async function hydrateWithSHAs() {
   );
 }
 
-function UpdateContents(content, project) {
+function updateReleaseSha(content, project) {
   return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
 }
 
@@ -108,7 +108,7 @@ async function run() {
 
     var fileContents = Base64.decode(releaseContent.content)
     projects.forEach((project) => {
-      fileContents = UpdateContents(fileContents, project)
+      fileContents = updateReleaseSha(fileContents, project)
     })
 
     const newReleaseContentBlob = Base64.encode(fileContents);
