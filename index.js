@@ -6,15 +6,15 @@ const { AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = require("./
 const PROJECTS = [
   {
     repoName: "notification-api",
-    manifestFile: "env/production/kustomization.yaml",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-api",
-  },
-  {
-    repoName: "notification-api",
     manifestFile: ".github/workflows/merge_to_main_production.yaml",
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
     ecrName: "api-lambda",
+  },
+  {
+    repoName: "notification-api",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
+    ecrName: "notify-api",
   },
   {
     repoName: "notification-admin",
@@ -112,22 +112,20 @@ async function run(projects) {
     })
 
     const newReleaseContentBlob = Base64.encode(fileContents);
+    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
 
-    return { manifestFile, newReleaseContentBlob, releaseContent }
+    return { manifestFile, newReleaseContentBlob, releaseContent, fileHasChanged }
   })
 
   changesToManifestFiles = await Promise.all(changesToManifestFiles)
 
-  // Return if no new changes.
-  if (changesToManifestFiles.map(({ newReleaseContentBlob, releaseContent }) => {
-    newReleaseContentBlob.trim() === releaseContent.content.trim()
-  }).all) {
-    return;
+  const filesHaveChanged = changesToManifestFiles.some(({ fileHasChanged }) => fileHasChanged)
+  if (filesHaveChanged) {
+    await closePRs();
+    await createPR(projects, issueContent, changesToManifestFiles);
   }
-
-  await closePRs();
-  await createPR(projects, issueContent, changesToManifestFiles);
 }
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 run(PROJECTS);
