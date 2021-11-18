@@ -94,12 +94,13 @@ async function run(projects) {
     ".github/PULL_REQUEST_TEMPLATE.md"
   );
   const issueContent = Base64.decode(prTemplate.content);
-  const manifestFiles = Array.from(new Set(projects.map(project => project.manifestFile)))
 
   await hydrateWithSHAs(projects);
 
-  var changesToManifestFiles = manifestFiles.map(async (manifestFile) => {
-    const projectsForFile = projects.filter(project => project.manifestFile == manifestFile)
+  const reducer = (previous, project) => ({ ...previous, [project.manifestFile]: (previous[project.manifestFile] || []).concat(project) })
+  const projectsForFiles = projects.reduce(reducer, {})
+
+  var changesToManifestFiles = Object.entries(projectsForFiles).map(async ([manifestFile, projectsForFile]) => {
 
     const releaseContent = await getContents(
       "notification-manifests",
