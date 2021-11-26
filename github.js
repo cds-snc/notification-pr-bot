@@ -18,7 +18,7 @@ async function closePRs() {
   });
 
   prs.forEach(async (pr) => {
-    if (pr.title.startsWith("[AUTO-PR]")) {
+    if (pr.title.startsWith("TEST [AUTO-PR]")) {
       await octokit.pulls.update({
         owner: GH_CDS,
         repo: "notification-manifests",
@@ -71,7 +71,7 @@ async function createPR(
   const pr = await octokit.pulls.create({
     owner: GH_CDS,
     repo: "notification-manifests",
-    title: `[AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
+    title: `TEST [AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
     head: branchName,
     base: "main",
     body: issueContent.replace(
