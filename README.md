@@ -32,3 +32,5 @@ in your current shell session:
 export TOKEN="${YOUR_TOKEN}"
 node index.js
 ```
+
+Note that in production we fetch the auth token https://github.com/organizations/cds-snc/settings/installations/17812835 (CDS GitHub admin access required) 
