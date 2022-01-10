@@ -1,149 +1,48 @@
-// Imports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-const github = require("@actions/github");
 const Base64 = require("js-base64").Base64;
-const YAML = require("yaml");
-const process = require("process");
+const { AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = require("./github")
 
-// Environmment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-const myToken = process.env.TOKEN;
-const octokit = new github.GitHub(myToken);
-
-// Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-const GH_CDS = "cds-snc";
-const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
+// Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const PROJECTS = [
   {
-    name: "notification-api",
+    repoName: "notification-api",
+    manifestFile: ".github/workflows/merge_to_main_production.yaml",
+    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+    ecrName: "api-lambda",
+  },
+  {
+    repoName: "notification-api",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-api",
   },
   {
-    name: "notification-admin",
+    repoName: "notification-admin",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-admin",
   },
   {
-    name: "notification-document-download-api",
+    repoName: "notification-document-download-api",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-document-download-api",
   },
   {
-    name: "notification-document-download-frontend",
+    repoName: "notification-document-download-frontend",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-document-download-frontend",
   },
   {
-    name: "notification-documentation",
+    repoName: "notification-documentation",
+    manifestFile: "env/production/kustomization.yaml",
+    ecrUrl: AWS_ECR_URL,
     ecrName: "notify-documentation",
   },
 ];
 
-// Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-const getCommitMessages = async (repo, sha) => {
-  const { data: commits } = await octokit.repos.listCommits({
-    owner: GH_CDS,
-    repo,
-    per_page: 50,
-  });
-  let index = 0;
-  for (let i = 0; i < 50; i++) {
-    if (commits[i].sha.startsWith(sha)) {
-      index = i;
-      break;
-    }
-  }
-  return commits
-    .slice(0, index)
-    .map(
-      (c) =>
-        `- [${c.commit.message.split("\n\n")[0]}](${c.html_url}) by ${
-          c.commit.author.name
-        }`
-    );
-};
-
-const getHeadSha = async (repo) => {
-  const { data: repoDetails } = await octokit.repos.get({
-    owner: GH_CDS,
-    repo,
-  });
-  const { data: repoBranch } = await octokit.repos.getBranch({
-    owner: GH_CDS,
-    repo,
-    branch: repoDetails.default_branch,
-  });
-  return repoBranch.commit.sha;
-};
-
-const getLatestTag = async (repo) => {
-  const {
-    data: [latestTag],
-  } = await octokit.repos.listTags({
-    owner: GH_CDS,
-    repo,
-    per_page: 1,
-  });
-
-  return latestTag.name;
-};
-
-async function closePRs() {
-  // Close old auto PRs
-  const { data: prs } = await octokit.pulls.list({
-    owner: GH_CDS,
-    repo: "notification-manifests",
-    state: "open",
-  });
-
-  prs.forEach(async (pr) => {
-    if (pr.title.startsWith("[AUTO-PR]")) {
-      await octokit.pulls.update({
-        owner: GH_CDS,
-        repo: "notification-manifests",
-        pull_number: pr.number,
-        state: "closed",
-      });
-      await octokit.git.deleteRef({
-        owner: GH_CDS,
-        repo: "notification-manifests",
-        ref: `heads/${pr.head.ref}`,
-      });
-    }
-  });
-}
-
-async function isNotLatestManifestsVersion() {
-  const releaseConfig = await getContents(
-    GH_CDS,
-    "notification-manifests",
-    "env/production/kustomization.yaml"
-  );
-
-  const releaseContent = Base64.decode(releaseConfig.content);
-  const prodVersion = releaseContent.match(
-    /notification-manifests\/\/base\?ref=(.*)/
-  )[1];
-
-  const latestVersion = await getLatestTag("notification-manifests");
-
-  return prodVersion != latestVersion;
-}
-
-async function isNotLatestTerraformVersion() {
-  const prodWorkflow = await getContents(
-    GH_CDS,
-    "notification-terraform",
-    ".github/workflows/infrastructure_version.txt"
-  );
-
-  const prodVersion = Base64.decode(prodWorkflow.content).trim();
-  const latestVersion = (await getLatestTag("notification-terraform")).replace(
-    "v",
-    ""
-  );
-
-  return prodVersion != latestVersion;
-}
+// Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 function shortSha(fullSha) {
   return fullSha.slice(0, 7);
@@ -153,135 +52,81 @@ function getSha(imageName) {
   return imageName.split(":").slice(-1)[0];
 }
 
-function getLatestImageUrl(projectName, headSha) {
-  return `${AWS_ECR_URL}/${projectName}:${shortSha(headSha)}`;
+function getLatestImageUrl(projects, projectName, headSha) {
+  const ecrUrl = projects.filter(project => project["ecrName"] == projectName)[0].ecrUrl
+  return `${ecrUrl}/${projectName}:${shortSha(headSha)}`;
 }
 
-async function buildLogs(projects) {
-  let logs = projects.map(async (project) => {
-    const msgsCommits = await getCommitMessages(project.name, project.oldSha);
-    const strCommits = msgsCommits.join("\n");
-    const projectName = project.name.toUpperCase();
-    return `${projectName}\n\n${strCommits}`;
-  });
-  logs = await Promise.all(logs);
-
-  logs = logs.join("\n\n");
-  if (await isNotLatestManifestsVersion()) {
-    logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-  }
-
-  if (await isNotLatestTerraformVersion()) {
-    logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-  }
-  return logs;
-}
-
-async function getContents(owner, repo, path) {
-  const { data: data } = await octokit.repos.getContents({
-    owner,
-    repo,
-    path,
-  });
-  return data;
-}
-
-async function createPR(
-  projects,
-  issueContent,
-  releaseConfig,
-  newReleaseContentBlob
-) {
-  const branchName = `release-${new Date().getTime()}`;
-  const manifestsSha = await getHeadSha("notification-manifests");
-  const logs = await buildLogs(projects);
-
-  const ref = await octokit.git.createRef({
-    owner: GH_CDS,
-    repo: "notification-manifests",
-    ref: `refs/heads/${branchName}`,
-    sha: manifestsSha,
-  });
-
-  const manifestUpdates = projects
-    .map((project) => {
-      return `${project.name}:${shortSha(project.headSha)}`;
-    })
-    .join(" and ");
-  const update = await octokit.repos.createOrUpdateFile({
-    owner: GH_CDS,
-    repo: "notification-manifests",
-    branch: branchName,
-    sha: releaseConfig.sha,
-    path: "env/production/kustomization.yaml",
-    message: `Updated manifests to ${manifestUpdates}`,
-    content: newReleaseContentBlob,
-  });
-
-  const pr = await octokit.pulls.create({
-    owner: GH_CDS,
-    repo: "notification-manifests",
-    title: `[AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
-    head: branchName,
-    base: "main",
-    body: issueContent.replace(
-      "> Give details ex. Security patching, content update, more API pods etc",
-      logs
-    ),
-    draft: true,
-  });
-  return Promise.all([ref, update, pr]);
-}
-
-async function hydrateWithSHAs(releaseConfig, projects) {
+async function hydrateWithSHAs(projects) {
   return await Promise.all(
-    releaseConfig.images.map(async (image) => {
-      const matchingProject = projects.find((project) =>
-        image.newName.includes(project.ecrName)
+    projects.map(async (project) => {
+      project.headSha = await getHeadSha(project.repoName);
+      project.shortSha = shortSha(project.headSha)
+      project.headUrl = getLatestImageUrl(
+        projects,
+        project.ecrName,
+        project.headSha
       );
-      matchingProject.headSha = await getHeadSha(matchingProject.name);
-      matchingProject.headUrl = getLatestImageUrl(
-        matchingProject.ecrName,
-        matchingProject.headSha
+
+      const releaseContent = await getContents(
+        "notification-manifests",
+        project.manifestFile
       );
-      matchingProject.oldSha = getSha(image.newName);
-      matchingProject.oldUrl = image.newName;
-      image.newName = matchingProject.headUrl;
-      return matchingProject;
+
+      const originalFileContents = Base64.decode(releaseContent.content)
+      const re = new RegExp(`${project.ecrName}:\\S*`, "g");
+      project.oldUrl = originalFileContents.match(re)[0]
+      project.oldSha = getSha(project.oldUrl);
+      return project;
     })
   );
+}
+
+function updateReleaseSha(content, project) {
+  return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
 }
 
 // Main ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-async function run() {
-  const releaseContent = await getContents(
-    GH_CDS,
-    "notification-manifests",
-    "env/production/kustomization.yaml"
-  );
-
+async function run(projects) {
   const prTemplate = await getContents(
-    GH_CDS,
     "notification-manifests",
     ".github/PULL_REQUEST_TEMPLATE.md"
   );
-
-  const releaseConfig = YAML.parse(Base64.decode(releaseContent.content));
   const issueContent = Base64.decode(prTemplate.content);
 
-  // Build up projects and update images with latest SHAs.
-  await hydrateWithSHAs(releaseConfig, PROJECTS);
+  await hydrateWithSHAs(projects);
 
-  // Return if no new changes.
-  const newReleaseContentBlob = Base64.encode(YAML.stringify(releaseConfig));
-  if (newReleaseContentBlob.trim() === releaseContent.content.trim()) {
-    return;
+  const reducer = (previous, project) => ({ ...previous, [project.manifestFile]: (previous[project.manifestFile] || []).concat(project) })
+  const projectsForFiles = projects.reduce(reducer, {})
+
+  var changesToManifestFiles = Object.entries(projectsForFiles).map(async ([manifestFile, projectsForFile]) => {
+
+    const releaseContent = await getContents(
+      "notification-manifests",
+      manifestFile
+    );
+
+    var fileContents = Base64.decode(releaseContent.content)
+    projectsForFile.forEach((project) => {
+      fileContents = updateReleaseSha(fileContents, project)
+    })
+
+    const newReleaseContentBlob = Base64.encode(fileContents);
+    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
+
+    return { manifestFile, newReleaseContentBlob, releaseContent, fileHasChanged }
+  })
+
+  changesToManifestFiles = await Promise.all(changesToManifestFiles)
+
+  const filesHaveChanged = changesToManifestFiles.some(({ fileHasChanged }) => fileHasChanged)
+  if (filesHaveChanged) {
+    await closePRs();
+    await createPR(projects, issueContent, changesToManifestFiles);
   }
-
-  await closePRs();
-  await createPR(PROJECTS, issueContent, releaseContent, newReleaseContentBlob);
 }
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-run();
+
+run(PROJECTS);
