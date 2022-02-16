@@ -1,17 +1,21 @@
-const github = require("@actions/github");
+const { Octokit } = require("@octokit/core");
+const {
+  restEndpointMethods,
+} = require("@octokit/plugin-rest-endpoint-methods");
 const process = require("process");
 
 // Constants ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 const myToken = process.env.TOKEN;
-const octokit = new github.GitHub(myToken);
+const MyOctokit = Octokit.plugin(restEndpointMethods);
+const octokit = new MyOctokit({ auth: myToken });
 const GH_CDS = "cds-snc";
 const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 async function closePRs() {
-  const { data: prs } = await octokit.pulls.list({
+  const { data: prs } = await octokit.rest.pulls.list({
     owner: GH_CDS,
     repo: "notification-manifests",
     state: "open",
@@ -19,13 +23,13 @@ async function closePRs() {
 
   prs.forEach(async (pr) => {
     if (pr.title.startsWith("[AUTO-PR]")) {
-      await octokit.pulls.update({
+      await octokit.rest.pulls.update({
         owner: GH_CDS,
         repo: "notification-manifests",
         pull_number: pr.number,
         state: "closed",
       });
-      await octokit.git.deleteRef({
+      await octokit.rest.git.deleteRef({
         owner: GH_CDS,
         repo: "notification-manifests",
         ref: `heads/${pr.head.ref}`,
@@ -43,7 +47,7 @@ async function createPR(
   const manifestsSha = await getHeadSha("notification-manifests");
   const logs = await buildLogs(projects);
 
-  const ref = await octokit.git.createRef({
+  const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
     repo: "notification-manifests",
     ref: `refs/heads/${branchName}`,
@@ -57,7 +61,7 @@ async function createPR(
     .join(" and ");
 
   for (const { manifestFile, releaseContent, newReleaseContentBlob } of releaseContentArray) {
-    await octokit.repos.createOrUpdateFile({
+    await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
       repo: "notification-manifests",
       branch: branchName,
@@ -68,7 +72,7 @@ async function createPR(
     })
   }
 
-  const pr = await octokit.pulls.create({
+  const pr = await octokit.rest.pulls.create({
     owner: GH_CDS,
     repo: "notification-manifests",
     title: `[AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
@@ -110,7 +114,7 @@ async function buildLogs(projects) {
 }
 
 const getCommitMessages = async (repo, sha) => {
-  const { data: commits } = await octokit.repos.listCommits({
+  const { data: commits } = await octokit.rest.repos.listCommits({
     owner: GH_CDS,
     repo,
     per_page: 50,
@@ -132,7 +136,7 @@ const getCommitMessages = async (repo, sha) => {
 };
 
 async function getContents(repo, path) {
-  const { data: data } = await octokit.repos.getContents({
+  const { data: data } = await octokit.rest.repos.getContent({
     owner: GH_CDS,
     repo,
     path,
@@ -141,11 +145,11 @@ async function getContents(repo, path) {
 }
 
 const getHeadSha = async (repo) => {
-  const { data: repoDetails } = await octokit.repos.get({
+  const { data: repoDetails } = await octokit.rest.repos.get({
     owner: GH_CDS,
     repo,
   });
-  const { data: repoBranch } = await octokit.repos.getBranch({
+  const { data: repoBranch } = await octokit.rest.repos.getBranch({
     owner: GH_CDS,
     repo,
     branch: repoDetails.default_branch,
@@ -156,7 +160,7 @@ const getHeadSha = async (repo) => {
 const getLatestTag = async (repo) => {
   const {
     data: [latestTag],
-  } = await octokit.repos.listTags({
+  } = await octokit.rest.repos.listTags({
     owner: GH_CDS,
     repo,
     per_page: 1,
@@ -167,16 +171,11 @@ const getLatestTag = async (repo) => {
 async function isNotLatestManifestsVersion() {
   const releaseConfig = await getContents(
     "notification-manifests",
-    "env/production/kustomization.yaml"
+    "VERSION"
   );
 
-  const releaseContent = Base64.decode(releaseConfig.content);
-  const prodVersion = releaseContent.match(
-    /notification-manifests\/\/base\?ref=(.*)/
-  )[1];
-
+  const prodVersion = Base64.decode(releaseConfig.content);
   const latestVersion = await getLatestTag("notification-manifests");
-
   return prodVersion != latestVersion;
 }
 
