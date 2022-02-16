@@ -61,7 +61,7 @@ async function createPR(
     .join(" and ");
 
   for (const { manifestFile, releaseContent, newReleaseContentBlob } of releaseContentArray) {
-    await octokit.rest.repos.createOrUpdateFile({
+    await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
       repo: "notification-manifests",
       branch: branchName,
@@ -171,16 +171,11 @@ const getLatestTag = async (repo) => {
 async function isNotLatestManifestsVersion() {
   const releaseConfig = await getContents(
     "notification-manifests",
-    "env/production/kustomization.yaml"
+    "VERSION"
   );
 
-  const releaseContent = Base64.decode(releaseConfig.content);
-  const prodVersion = releaseContent.match(
-    /notification-manifests\/\/base\?ref=(.*)/
-  )[1];
-
+  const prodVersion = Base64.decode(releaseConfig.content);
   const latestVersion = await getLatestTag("notification-manifests");
-
   return prodVersion != latestVersion;
 }
 
