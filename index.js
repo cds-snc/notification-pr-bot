@@ -29,12 +29,6 @@ const PROJECTS = [
     ecrName: "notify-document-download-api",
   },
   {
-    repoName: "notification-document-download-frontend",
-    manifestFile: "env/production/kustomization.yaml",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-document-download-frontend",
-  },
-  {
     repoName: "notification-documentation",
     manifestFile: "env/production/kustomization.yaml",
     ecrUrl: AWS_ECR_URL,
