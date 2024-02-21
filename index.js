@@ -34,18 +34,18 @@ const PROJECTS = [
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-documentation",
   },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/merge_to_main_production.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "system_status",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/merge_to_main_production.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "heartbeat",
-  },
+  // {
+  //   repoName: "notification-lambdas",
+  //   manifestFile: ".github/workflows/merge_to_main_production.yaml",
+  //   ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+  //   ecrName: "system_status",
+  // },
+  // {
+  //   repoName: "notification-lambdas",
+  //   manifestFile: ".github/workflows/merge_to_main_production.yaml",
+  //   ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+  //   ecrName: "heartbeat",
+  // },
 ];
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
