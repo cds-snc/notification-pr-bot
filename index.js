@@ -7,7 +7,7 @@ const PROJECTS = [
   {
     repoName: "notification-api",
     manifestFile: ".github/workflows/merge_to_main_production.yaml",
-    helmfileOverride: "helmfile/overrides/production.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
     helmfileTagKey: "API_DOCKER_TAG",
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
     ecrName: "api-lambda",
@@ -15,7 +15,7 @@ const PROJECTS = [
   {
     repoName: "notification-api",
     manifestFile: "env/production/kustomization.yaml",
-    helmfileOverride: "helmfile/overrides/production.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
     helmfileTagKey: "API_DOCKER_TAG",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-api",
@@ -23,7 +23,7 @@ const PROJECTS = [
   {
     repoName: "notification-admin",
     manifestFile: "env/production/kustomization.yaml",
-    helmfileOverride: "helmfile/overrides/production.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
     helmfileTagKey: "ADMIN_DOCKER_TAG",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-admin",
@@ -31,7 +31,7 @@ const PROJECTS = [
   {
     repoName: "notification-document-download-api",
     manifestFile: "env/production/kustomization.yaml",
-    helmfileOverride: "helmfile/overrides/production.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
     helmfileTagKey: "DOCUMENT_DOWNLOAD_DOCKER_TAG",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-document-download-api",
@@ -39,7 +39,7 @@ const PROJECTS = [
   {
     repoName: "notification-documentation",
     manifestFile: "env/production/kustomization.yaml",
-    helmfileOverride: "helmfile/overrides/production.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
     helmfileTagKey: "DOCUMENTATION_DOCKER_TAG",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-documentation",
