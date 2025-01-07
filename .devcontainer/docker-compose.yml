@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  pr-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace
+    command: sleep infinity
