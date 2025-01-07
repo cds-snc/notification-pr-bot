@@ -102,10 +102,7 @@ async function hydrateWithSHAs(projects) {
 
       const helmfileContents = Base64.decode(helmfileContent.content)
 
-      console.log(helmfileContents);
-
       const helmfileRe = new RegExp(`${project.helmfileTagKey}: "(.*?)"`, "g")
-      console.log(helmfileRe);
       project.oldHelmfileTag = helmfileContents.match(helmfileRe)[0]
       project.oldHelmfileSha = getSha(project.oldHelmfileTag);
 
@@ -143,10 +140,10 @@ async function run(projects) {
       manifestFile
     );
 
+
     var fileContents = Base64.decode(releaseContent.content)
     projectsForFile.forEach((project) => {
       fileContents = updateReleaseSha(fileContents, project)
-      helmfileContents = updateHelmfileSha(fileContents, project)
     })
 
     const newReleaseContentBlob = Base64.encode(fileContents);
@@ -154,16 +151,61 @@ async function run(projects) {
 
     return { manifestFile, newReleaseContentBlob, releaseContent, fileHasChanged }
   })
-
+ 
   changesToManifestFiles = await Promise.all(changesToManifestFiles)
 
   const filesHaveChanged = changesToManifestFiles.some(({ fileHasChanged }) => fileHasChanged)
   if (filesHaveChanged) {
     await closePRs();
-    await createPR(projects, issueContent, changesToManifestFiles);
+    await createPR(projects, issueContent, changesToManifestFiles, false);
+  }
+
+}
+
+// HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+async function runHelmfile(projects) {
+  const prTemplate = await getContents(
+    "notification-manifests",
+    ".github/PULL_REQUEST_TEMPLATE.md"
+  );
+  const issueContent = Base64.decode(prTemplate.content);
+
+  await hydrateWithSHAs(projects);
+
+  const reducer = (previous, project) => ({ ...previous, [project.helmfileOverride]: (previous[project.helmfileOverride] || []).concat(project) })
+  const projectsForFiles = projects.reduce(reducer, {})
+
+  var changesToHelmfile = Object.entries(projectsForFiles).map(async ([helmfileOverride, projectsForFile]) => {
+
+    const releaseContent = await getContents(
+      "notification-manifests",
+      helmfileOverride
+    );
+
+
+    var fileContents = Base64.decode(releaseContent.content)
+    projectsForFile.forEach((project) => {
+      fileContents = updateHelmfileSha(fileContents, project)
+    })
+
+    const newReleaseContentBlob = Base64.encode(fileContents);
+    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
+
+    return { helmfileOverride, newReleaseContentBlob, releaseContent, fileHasChanged }
+  })
+ 
+  changesToHelmfile = await Promise.all(changesToHelmfile)
+
+  const filesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
+  if (filesHaveChanged) {
+    await closePRs();
+    await createPR(projects, issueContent, changesToHelmfile, true);
   }
 }
+
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 run(PROJECTS);
+runHelmfile(PROJECTS);
