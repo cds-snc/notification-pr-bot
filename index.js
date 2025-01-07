@@ -96,12 +96,16 @@ async function hydrateWithSHAs(projects) {
 
       // Patch the helmfile tags
       const helmfileContent = await getContents(
-        "notifiation-manifests",
+        "notification-manifests",
         project.helmfileOverride
       );
 
       const helmfileContents = Base64.decode(helmfileContent.content)
-      const helmfileRe = new RegExp(`${project.helmfileTagKey} : "(.*?)"`, "g")
+
+      console.log(helmfileContents);
+
+      const helmfileRe = new RegExp(`${project.helmfileTagKey}: "(.*?)"`, "g")
+      console.log(helmfileRe);
       project.oldHelmfileTag = helmfileContents.match(helmfileRe)[0]
       project.oldHelmfileSha = getSha(project.oldHelmfileTag);
 
@@ -114,7 +118,7 @@ function updateReleaseSha(content, project) {
   return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
 }
 
-function updateHelmfileSha(conent,project) {
+function updateHelmfileSha(content,project) {
   return content.replace(`${project.helmfileTagKey}: "${project.oldSha}"`, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`)
 }
 
@@ -142,7 +146,7 @@ async function run(projects) {
     var fileContents = Base64.decode(releaseContent.content)
     projectsForFile.forEach((project) => {
       fileContents = updateReleaseSha(fileContents, project)
-      helmfileContents = updateHelmfileSha(helmfileContents, project)
+      helmfileContents = updateHelmfileSha(fileContents, project)
     })
 
     const newReleaseContentBlob = Base64.encode(fileContents);

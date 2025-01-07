@@ -7133,11 +7133,14 @@ async function hydrateWithSHAs(projects) {
 
       // Patch the helmfile tags
       const helmfileContent = await getContents(
-        "notifiation-manifests",
+        "notification-manifests",
         project.helmfileOverride
       );
 
       const helmfileContents = Base64.decode(helmfileContent.content)
+
+      console.log(helmfileContents);
+
       const helmfileRe = new RegExp(`${project.helmfileTagKey} : "(.*?)"`, "g")
       project.oldHelmfileTag = helmfileContents.match(helmfileRe)[0]
       project.oldHelmfileSha = getSha(project.oldHelmfileTag);
