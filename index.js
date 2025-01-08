@@ -116,7 +116,10 @@ function updateReleaseSha(content, project) {
 }
 
 function updateHelmfileSha(content,project) {
-  return content.replace(`${project.helmfileTagKey}: "${project.oldSha}"`, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`)
+  
+  let re = new RegExp(String.raw`${project.helmfileTagKey}: "(.*?)"`, "g");
+
+  return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
 }
 
 // Main ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
