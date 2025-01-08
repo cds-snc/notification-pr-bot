@@ -41,7 +41,8 @@ async function closePRs() {
 async function createPR(
   projects,
   issueContent,
-  releaseContentArray
+  releaseContentArray,
+  isHelmfile = false
 ) {
   const branchName = `release-${new Date().getTime()}`;
   const manifestsSha = await getHeadSha("notification-manifests");
@@ -60,6 +61,23 @@ async function createPR(
     })
     .join(" and ");
 
+    var prPrefix = ""
+
+if (isHelmfile) {
+  prPrefix = "HELMFILE" 
+  for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of releaseContentArray) {
+    await octokit.rest.repos.createOrUpdateFileContents({
+      owner: GH_CDS,
+      repo: "notification-manifests",
+      branch: branchName,
+      sha: releaseContent.sha,
+      path: helmfileOverride,
+      message: `Updated manifests to ${manifestUpdates}`,
+      content: newReleaseContentBlob,
+    })
+  }
+} else {
+  prPrefix = "KUSTOMIZE"
   for (const { manifestFile, releaseContent, newReleaseContentBlob } of releaseContentArray) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
@@ -71,11 +89,14 @@ async function createPR(
       content: newReleaseContentBlob,
     })
   }
+}
+
+
 
   const pr = await octokit.rest.pulls.create({
     owner: GH_CDS,
     repo: "notification-manifests",
-    title: `[AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
+    title: `[AUTO-PR] ${prPrefix} - Automatically generated new release ${new Date().toISOString()}`,
     head: branchName,
     base: "main",
     body: issueContent.replace(

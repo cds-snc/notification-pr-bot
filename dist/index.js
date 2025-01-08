@@ -7044,30 +7044,40 @@ const PROJECTS = [
   {
     repoName: "notification-api",
     manifestFile: ".github/workflows/merge_to_main_production.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
+    helmfileTagKey: "API_DOCKER_TAG",
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
     ecrName: "api-lambda",
   },
   {
     repoName: "notification-api",
     manifestFile: "env/production/kustomization.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
+    helmfileTagKey: "API_DOCKER_TAG",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-api",
   },
   {
     repoName: "notification-admin",
     manifestFile: "env/production/kustomization.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
+    helmfileTagKey: "ADMIN_DOCKER_TAG",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-admin",
   },
   {
     repoName: "notification-document-download-api",
     manifestFile: "env/production/kustomization.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
+    helmfileTagKey: "DOCUMENT_DOWNLOAD_DOCKER_TAG",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-document-download-api",
   },
   {
     repoName: "notification-documentation",
     manifestFile: "env/production/kustomization.yaml",
+    helmfileOverride: "helmfile/overrides/production.env",
+    helmfileTagKey: "DOCUMENTATION_DOCKER_TAG",
     ecrUrl: AWS_ECR_URL,
     ecrName: "notify-documentation",
   },
@@ -7120,6 +7130,21 @@ async function hydrateWithSHAs(projects) {
       const re = new RegExp(`${project.ecrName}:\\S*`, "g");
       project.oldUrl = originalFileContents.match(re)[0]
       project.oldSha = getSha(project.oldUrl);
+
+      // Patch the helmfile tags
+      const helmfileContent = await getContents(
+        "notification-manifests",
+        project.helmfileOverride
+      );
+
+      const helmfileContents = Base64.decode(helmfileContent.content)
+
+      console.log(helmfileContents);
+
+      const helmfileRe = new RegExp(`${project.helmfileTagKey} : "(.*?)"`, "g")
+      project.oldHelmfileTag = helmfileContents.match(helmfileRe)[0]
+      project.oldHelmfileSha = getSha(project.oldHelmfileTag);
+
       return project;
     })
   );
@@ -7127,6 +7152,10 @@ async function hydrateWithSHAs(projects) {
 
 function updateReleaseSha(content, project) {
   return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
+}
+
+function updateHelmfileSha(conent,project) {
+  return content.replace(`${project.helmfileTagKey}: "${project.oldSha}"`, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`)
 }
 
 // Main ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -7153,6 +7182,7 @@ async function run(projects) {
     var fileContents = Base64.decode(releaseContent.content)
     projectsForFile.forEach((project) => {
       fileContents = updateReleaseSha(fileContents, project)
+      helmfileContents = updateHelmfileSha(helmfileContents, project)
     })
 
     const newReleaseContentBlob = Base64.encode(fileContents);
