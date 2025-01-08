@@ -1,0 +1,31 @@
+{
+  "name": "Node.js & TypeScript",
+  // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "pr-bot",
+  "workspaceFolder": "/workspace",
+  "features": {
+    // "ghcr.io/guiyomh/features/just:0": {},
+    // "ghcr.io/jungaretti/features/ripgrep:1": {},
+    // "ghcr.io/lukewiwa/features/shellcheck:0": {},
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "eamodio.gitlens",
+        "fill-labs.dependi",
+        "GitHub.copilot",
+        "github.copilot-chat",
+        "github.vscode-pull-request-github",
+        "kaiwood.center-editor-window",
+        "ms-azuretools.vscode-docker",
+        "ms-vsliveshare.vsliveshare",
+        "timonwong.shellcheck",
+        "usernamehw.errorlens",
+        "visualstudioexptteam.vscodeintellicode",
+        "wenfangdu.jump",
+        "yzhang.markdown-all-in-one"
+      ]
+    }
+  }
+}
