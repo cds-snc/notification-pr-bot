@@ -47,7 +47,8 @@ async function closePRs() {
 async function createPR(
   projects,
   issueContent,
-  releaseContentArray
+  releaseContentArray,
+  isHelmfile = false
 ) {
   const branchName = `release-${new Date().getTime()}`;
   const manifestsSha = await getHeadSha("notification-manifests");
@@ -66,6 +67,23 @@ async function createPR(
     })
     .join(" and ");
 
+    var prPrefix = ""
+
+if (isHelmfile) {
+  prPrefix = "HELMFILE" 
+  for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of releaseContentArray) {
+    await octokit.rest.repos.createOrUpdateFileContents({
+      owner: GH_CDS,
+      repo: "notification-manifests",
+      branch: branchName,
+      sha: releaseContent.sha,
+      path: helmfileOverride,
+      message: `Updated manifests to ${manifestUpdates}`,
+      content: newReleaseContentBlob,
+    })
+  }
+} else {
+  prPrefix = "KUSTOMIZE"
   for (const { manifestFile, releaseContent, newReleaseContentBlob } of releaseContentArray) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
@@ -77,11 +95,14 @@ async function createPR(
       content: newReleaseContentBlob,
     })
   }
+}
+
+
 
   const pr = await octokit.rest.pulls.create({
     owner: GH_CDS,
     repo: "notification-manifests",
-    title: `[AUTO-PR] Automatically generated new release ${new Date().toISOString()}`,
+    title: `[AUTO-PR] ${prPrefix} - Automatically generated new release ${new Date().toISOString()}`,
     head: branchName,
     base: "main",
     body: issueContent.replace(
@@ -7139,9 +7160,7 @@ async function hydrateWithSHAs(projects) {
 
       const helmfileContents = Base64.decode(helmfileContent.content)
 
-      console.log(helmfileContents);
-
-      const helmfileRe = new RegExp(`${project.helmfileTagKey} : "(.*?)"`, "g")
+      const helmfileRe = new RegExp(`${project.helmfileTagKey}: "(.*?)"`, "g")
       project.oldHelmfileTag = helmfileContents.match(helmfileRe)[0]
       project.oldHelmfileSha = getSha(project.oldHelmfileTag);
 
@@ -7154,8 +7173,11 @@ function updateReleaseSha(content, project) {
   return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
 }
 
-function updateHelmfileSha(conent,project) {
-  return content.replace(`${project.helmfileTagKey}: "${project.oldSha}"`, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`)
+function updateHelmfileSha(content,project) {
+  
+  let re = new RegExp(String.raw`${project.helmfileTagKey}: "(.*?)"`, "g");
+
+  return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
 }
 
 // Main ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -7179,10 +7201,10 @@ async function run(projects) {
       manifestFile
     );
 
+
     var fileContents = Base64.decode(releaseContent.content)
     projectsForFile.forEach((project) => {
       fileContents = updateReleaseSha(fileContents, project)
-      helmfileContents = updateHelmfileSha(helmfileContents, project)
     })
 
     const newReleaseContentBlob = Base64.encode(fileContents);
@@ -7190,19 +7212,64 @@ async function run(projects) {
 
     return { manifestFile, newReleaseContentBlob, releaseContent, fileHasChanged }
   })
-
+ 
   changesToManifestFiles = await Promise.all(changesToManifestFiles)
 
   const filesHaveChanged = changesToManifestFiles.some(({ fileHasChanged }) => fileHasChanged)
   if (filesHaveChanged) {
     await closePRs();
-    await createPR(projects, issueContent, changesToManifestFiles);
+    await createPR(projects, issueContent, changesToManifestFiles, false);
+  }
+
+}
+
+// HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+async function runHelmfile(projects) {
+  const prTemplate = await getContents(
+    "notification-manifests",
+    ".github/PULL_REQUEST_TEMPLATE.md"
+  );
+  const issueContent = Base64.decode(prTemplate.content);
+
+  await hydrateWithSHAs(projects);
+
+  const reducer = (previous, project) => ({ ...previous, [project.helmfileOverride]: (previous[project.helmfileOverride] || []).concat(project) })
+  const projectsForFiles = projects.reduce(reducer, {})
+
+  var changesToHelmfile = Object.entries(projectsForFiles).map(async ([helmfileOverride, projectsForFile]) => {
+
+    const releaseContent = await getContents(
+      "notification-manifests",
+      helmfileOverride
+    );
+
+
+    var fileContents = Base64.decode(releaseContent.content)
+    projectsForFile.forEach((project) => {
+      fileContents = updateHelmfileSha(fileContents, project)
+    })
+
+    const newReleaseContentBlob = Base64.encode(fileContents);
+    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
+
+    return { helmfileOverride, newReleaseContentBlob, releaseContent, fileHasChanged }
+  })
+ 
+  changesToHelmfile = await Promise.all(changesToHelmfile)
+
+  const filesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
+  if (filesHaveChanged) {
+    await closePRs();
+    await createPR(projects, issueContent, changesToHelmfile, true);
   }
 }
+
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 run(PROJECTS);
+runHelmfile(PROJECTS);
 
 })();
 
