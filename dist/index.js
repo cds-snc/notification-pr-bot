@@ -7260,7 +7260,6 @@ async function runHelmfile(projects) {
 
   const filesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
   if (filesHaveChanged) {
-    // await closePRs();
     await createPR(projects, issueContent, changesToHelmfile, true);
   }
 }
