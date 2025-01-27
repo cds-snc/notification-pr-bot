@@ -42,11 +42,12 @@ async function createPR(
   projects,
   issueContent,
   releaseContentArray,
-  isHelmfile = false
+
 ) {
   const branchName = `release-${new Date().getTime()}`;
   const manifestsSha = await getHeadSha("notification-manifests");
   const logs = await buildLogs(projects);
+  const isHelmfile = 'false';
 
   const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
@@ -63,7 +64,6 @@ async function createPR(
 
     var prPrefix = ""
 
-if (isHelmfile) {
   prPrefix = "HELMFILE" 
   for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of releaseContentArray) {
     await octokit.rest.repos.createOrUpdateFileContents({
@@ -76,20 +76,7 @@ if (isHelmfile) {
       content: newReleaseContentBlob,
     })
   }
-} else {
-  prPrefix = "KUSTOMIZE"
-  for (const { manifestFile, releaseContent, newReleaseContentBlob } of releaseContentArray) {
-    await octokit.rest.repos.createOrUpdateFileContents({
-      owner: GH_CDS,
-      repo: "notification-manifests",
-      branch: branchName,
-      sha: releaseContent.sha,
-      path: manifestFile,
-      message: `Updated manifests to ${manifestUpdates}`,
-      content: newReleaseContentBlob,
-    })
-  }
-}
+
 
 
 
@@ -121,6 +108,7 @@ async function buildLogs(projects) {
     const projectName = project.repoName.toUpperCase();
     return `${projectName}\n\n${strCommits}`;
   });
+  
   logs = await Promise.all(logs);
 
   logs = logs.join("\n\n");
@@ -131,6 +119,7 @@ async function buildLogs(projects) {
   if (await isNotLatestTerraformVersion()) {
     logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
   }
+
   return logs;
 }
 
@@ -140,6 +129,7 @@ const getCommitMessages = async (repo, sha) => {
     repo,
     per_page: 50,
   });
+
   let index = 0;
   for (let i = 0; i < 50; i++) {
     if (commits[i].sha.startsWith(sha)) {
@@ -147,6 +137,7 @@ const getCommitMessages = async (repo, sha) => {
       break;
     }
   }
+
   return commits
     .slice(0, index)
     .map(
