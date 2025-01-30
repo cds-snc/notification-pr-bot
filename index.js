@@ -214,4 +214,4 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-main(true, "[TEST DO NOT MERGE]", PROJECTS, PROJECTS_LAMBDAS);
+main(true, "[AUTO-PR]", PROJECTS, PROJECTS_LAMBDAS);
