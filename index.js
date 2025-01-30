@@ -1,4 +1,5 @@
 const Base64 = require("js-base64").Base64;
+
 const { AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = require("./github")
 
 // Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -55,96 +56,94 @@ const PROJECTS_LAMBDAS = [
   // },
 ]
 
-// Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 function shortSha(fullSha) {
-  return fullSha.slice(0, 7);
-}
-
-function getLatestImageUrl(projects, projectName, headSha) {
-  const ecrUrl = projects.filter(project => project["ecrName"] == projectName)[0].ecrUrl
-  return `${ecrUrl}/${projectName}:${shortSha(headSha)}`;
-}
-
-function getSha(project, content) {
-  const helmfileRe = new RegExp(`${project.helmfileTagKey}: "(.*?)"`, "g")
-  const result = content.match(helmfileRe)[0]
-  const tagShaRe = new RegExp(`"(.*?)"`, "g")
-  var tag = result.match(tagShaRe)[0]
-  tag = tag.replaceAll("\"","");
-  return tag;
-
-}
-
-function getLambdaSha(imageName) {
-  return imageName.split(":").slice(-1)[0];
-}
-
-async function hydrateWithSHAs(projects) {
-  return await Promise.all(
-    projects.map(async (project) => {
-      project.headSha = await getHeadSha(project.repoName);
-      project.shortSha = shortSha(project.headSha)
-      project.headUrl = getLatestImageUrl(
-        projects,
-        project.ecrName,
-        project.headSha
-      );
-
-      // Patch the helmfile tags
-      const helmfileContent = await getContents(
-        "notification-manifests",
-        project.helmfileOverride
-      );
-
-      const helmfileContents = Base64.decode(helmfileContent.content)
-      
-      project.oldSha = getSha(project, helmfileContents);
-
-      return project;
-    })
-  );
-}
-
-async function hydrateLambdasWithSHAs(projects) {
-  return await Promise.all(
-    projects.map(async (project) => {
-      project.headSha = await getHeadSha(project.repoName);
-      project.shortSha = shortSha(project.headSha)
-      project.headUrl = getLatestImageUrl(
-        projects,
-        project.ecrName,
-        project.headSha
-      );
-
-      const releaseContent = await getContents(
-        "notification-manifests",
-        project.manifestFile
-      );
-
-      const originalFileContents = Base64.decode(releaseContent.content)
-      const re = new RegExp(`${project.ecrName}:\\S*`, "g");
-      project.oldUrl = originalFileContents.match(re)[0]
-      project.oldSha = getLambdaSha(project.oldUrl);
-      return project;
-    })
-  );
-}
-
-function updateHelmfileSha(content,project) {
+    return fullSha.slice(0, 7);
+  }
   
-  let re = new RegExp(String.raw`${project.helmfileTagKey}: "(.*?)"`, "g");
-
-  return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
-}
-
-function updateLambdaSha(content, project) {
-  return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
-}
+  function getLatestImageUrl(projects, projectName, headSha) {
+    const ecrUrl = projects.filter(project => project["ecrName"] == projectName)[0].ecrUrl
+    return `${ecrUrl}/${projectName}:${shortSha(headSha)}`;
+  }
+  
+  function getSha(project, content) {
+    const helmfileRe = new RegExp(`${project.helmfileTagKey}: "(.*?)"`, "g")
+    const result = content.match(helmfileRe)[0]
+    const tagShaRe = new RegExp(`"(.*?)"`, "g")
+    var tag = result.match(tagShaRe)[0]
+    tag = tag.replaceAll("\"","");
+    return tag;
+  
+  }
+  
+  function getLambdaSha(imageName) {
+    return imageName.split(":").slice(-1)[0];
+  }
+  
+  async function hydrateWithSHAs(projects) {
+    return await Promise.all(
+      projects.map(async (project) => {
+        project.headSha = await getHeadSha(project.repoName);
+        project.shortSha = shortSha(project.headSha)
+        project.headUrl = getLatestImageUrl(
+          projects,
+          project.ecrName,
+          project.headSha
+        );
+  
+        // Patch the helmfile tags
+        const helmfileContent = await getContents(
+          "notification-manifests",
+          project.helmfileOverride
+        );
+  
+        const helmfileContents = Base64.decode(helmfileContent.content)
+        
+        project.oldSha = getSha(project, helmfileContents);
+  
+        return project;
+      })
+    );
+  }
+  
+  async function hydrateLambdasWithSHAs(projects) {
+    return await Promise.all(
+      projects.map(async (project) => {
+        project.headSha = await getHeadSha(project.repoName);
+        project.shortSha = shortSha(project.headSha)
+        project.headUrl = getLatestImageUrl(
+          projects,
+          project.ecrName,
+          project.headSha
+        );
+  
+        const releaseContent = await getContents(
+          "notification-manifests",
+          project.manifestFile
+        );
+  
+        const originalFileContents = Base64.decode(releaseContent.content)
+        const re = new RegExp(`${project.ecrName}:\\S*`, "g");
+        project.oldUrl = originalFileContents.match(re)[0]
+        project.oldSha = getLambdaSha(project.oldUrl);
+        return project;
+      })
+    );
+  }
+  
+  function updateHelmfileSha(content,project) {
+    let re = new RegExp(String.raw`${project.helmfileTagKey}: "(.*?)"`, "g");
+    return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
+  }
+  
+  function updateLambdaSha(content, project) {
+    return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
+  }
 
 // HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-async function main(projects, projects_lambdas) {
+async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   const prTemplate = await getContents(
     "notification-manifests",
     ".github/PULL_REQUEST_TEMPLATE.md"
@@ -205,12 +204,14 @@ async function main(projects, projects_lambdas) {
   const lambdaFilesHaveChanged = changesToLambdaFiles.some(({ fileHasChanged }) => fileHasChanged)
 
   if (helmFilesHaveChanged || lambdaFilesHaveChanged) {
-    // await closePRs();
-    await createPR(projects, projects_lambdas, issueContent, changesToHelmfile, changesToLambdaFiles);
+    if (closePRsFirst) {
+      await closePRs(titlePrefix);
+    }
+    await createPR(titlePrefix, projects, projects_lambdas, issueContent, changesToHelmfile, changesToLambdaFiles);
   }
 }
 
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-main(PROJECTS, PROJECTS_LAMBDAS);
+main(true, "[TEST DO NOT MERGE]", PROJECTS, PROJECTS_LAMBDAS);

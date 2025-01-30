@@ -1,3 +1,5 @@
+const Base64 = require("js-base64").Base64;
+
 const { Octokit } = require("@octokit/core");
 const {
   restEndpointMethods,
@@ -14,7 +16,7 @@ const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-async function closePRs() {
+async function closePRs(titlePrefix) {
   const { data: prs } = await octokit.rest.pulls.list({
     owner: GH_CDS,
     repo: "notification-manifests",
@@ -22,7 +24,8 @@ async function closePRs() {
   });
 
   prs.forEach(async (pr) => {
-    if (pr.title.startsWith("[AUTO-PR]")) {
+    if (pr.title.startsWith(titlePrefix)) {
+      console.log(`Closing PR ${pr.title}`);
       await octokit.rest.pulls.update({
         owner: GH_CDS,
         repo: "notification-manifests",
@@ -39,6 +42,7 @@ async function closePRs() {
 }
 
 async function createPR(
+  titlePrefix,
   projects, projects_lambdas,
   issueContent,
   changesToHelmfile, changesToLambdaFiles,
@@ -91,10 +95,12 @@ async function createPR(
     })
   }
 
+  const title = `${titlePrefix} - Automatically generated new release ${new Date().toISOString()}`
+  console.log(`Creating PR ${title}`);
   const pr = await octokit.rest.pulls.create({
     owner: GH_CDS,
     repo: "notification-manifests",
-    title: `[TEST DO NOT MERGE] - Automatically generated new release ${new Date().toISOString()}`,
+    title: title,
     head: branchName,
     base: "main",
     body: issueContent.replace(
