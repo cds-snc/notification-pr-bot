@@ -1,3 +1,5 @@
+const Base64 = require("js-base64").Base64;
+
 const { Octokit } = require("@octokit/core");
 const {
   restEndpointMethods,
@@ -14,7 +16,7 @@ const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-async function closePRs() {
+async function closePRs(titlePrefix) {
   const { data: prs } = await octokit.rest.pulls.list({
     owner: GH_CDS,
     repo: "notification-manifests",
@@ -22,7 +24,8 @@ async function closePRs() {
   });
 
   prs.forEach(async (pr) => {
-    if (pr.title.startsWith("[AUTO-PR]")) {
+    if (pr.title.startsWith(titlePrefix)) {
+      console.log(`Closing PR ${pr.title}`);
       await octokit.rest.pulls.update({
         owner: GH_CDS,
         repo: "notification-manifests",
@@ -39,15 +42,15 @@ async function closePRs() {
 }
 
 async function createPR(
-  projects,
+  titlePrefix,
+  projects, projects_lambdas,
   issueContent,
-  releaseContentArray,
+  changesToHelmfile, changesToLambdaFiles,
 
 ) {
   const branchName = `release-${new Date().getTime()}`;
   const manifestsSha = await getHeadSha("notification-manifests");
   const logs = await buildLogs(projects);
-  const isHelmfile = 'false';
 
   const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
@@ -56,34 +59,48 @@ async function createPR(
     sha: manifestsSha,
   });
 
-  const manifestUpdates = projects
+  const helmManifestUpdates = projects
     .map((project) => {
       return `${project.repoName}:${project.shortSha}`;
     })
     .join(" and ");
 
-    var prPrefix = ""
-
-  prPrefix = "HELMFILE" 
-  for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of releaseContentArray) {
+  for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of changesToHelmfile) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
       repo: "notification-manifests",
       branch: branchName,
       sha: releaseContent.sha,
       path: helmfileOverride,
-      message: `Updated manifests to ${manifestUpdates}`,
+      message: `Updated manifests to ${helmManifestUpdates}`,
       content: newReleaseContentBlob,
     })
   }
 
+  const lambdaManifestUpdates = projects_lambdas
+    .map((project) => {
+      return `${project.repoName}:${project.shortSha}`;
+    })
+    .join(" and ");
 
+  for (const { manifestFile, releaseContent, newReleaseContentBlob } of changesToLambdaFiles) {
+    await octokit.rest.repos.createOrUpdateFileContents({
+      owner: GH_CDS,
+      repo: "notification-manifests",
+      branch: branchName,
+      sha: releaseContent.sha,
+      path: manifestFile,
+      message: `Updated manifests to ${lambdaManifestUpdates}`,
+      content: newReleaseContentBlob,
+    })
+  }
 
-
+  const title = `${titlePrefix} - Automatically generated new release ${new Date().toISOString()}`
+  console.log(`Creating PR ${title}`);
   const pr = await octokit.rest.pulls.create({
     owner: GH_CDS,
     repo: "notification-manifests",
-    title: `[AUTO-PR] ${prPrefix} - Automatically generated new release ${new Date().toISOString()}`,
+    title: title,
     head: branchName,
     base: "main",
     body: issueContent.replace(
