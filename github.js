@@ -50,7 +50,7 @@ async function createPR(
 ) {
   const branchName = `release-${new Date().getTime()}`;
   const manifestsSha = await getHeadSha("notification-manifests");
-  const logs = await buildLogs([...projects, ...projects_lambdas]);
+  const logs = await buildLogs(projects);
 
   const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
