@@ -56,7 +56,7 @@ async function createPR(
 ) {
   const branchName = `release-${new Date().getTime()}`;
   const manifestsSha = await getHeadSha("notification-manifests");
-  const logs = await buildLogs(projects);
+  const logs = await buildLogs([...projects, ...projects_lambdas]);
 
   const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
@@ -7114,12 +7114,12 @@ const PROJECTS_LAMBDAS = [
   //   ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
   //   ecrName: "system_status",
   // },
-  // {
-  //   repoName: "notification-lambdas",
-  //   manifestFile: ".github/workflows/merge_to_main_production.yaml",
-  //   ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-  //   ecrName: "heartbeat",
-  // },
+  {
+    repoName: "notification-lambdas",
+    manifestFile: ".github/workflows/merge_to_main_production.yaml",
+    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+    ecrName: "heartbeat",
+  },
 ]
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
