@@ -7104,22 +7104,10 @@ const PROJECTS = [
 const PROJECTS_LAMBDAS = [
   {
     repoName: "notification-api",
-    manifestFile: ".github/workflows/merge_to_main_production.yaml",
+    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
     ecrName: "api-lambda",
-  },
-  // {
-  //   repoName: "notification-lambdas",
-  //   manifestFile: ".github/workflows/merge_to_main_production.yaml",
-  //   ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-  //   ecrName: "system_status",
-  // },
-  // {
-  //   repoName: "notification-lambdas",
-  //   manifestFile: ".github/workflows/merge_to_main_production.yaml",
-  //   ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-  //   ecrName: "heartbeat",
-  // },
+  }
 ]
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
