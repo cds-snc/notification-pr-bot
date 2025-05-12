@@ -41,7 +41,19 @@ const PROJECTS_LAMBDAS = [
     manifestFile: ".github/workflows/helmfile_production_apply.yaml",
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
     ecrName: "api-lambda",
-  }
+  },
+  {
+    repoName: "notification-lambdas",
+    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
+    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+    ecrName: "heartbeat",
+  },
+  {
+    repoName: "notification-lambdas",
+    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
+    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+    ecrName: "ses_to_sqs_email_callbacks",
+  },
 ]
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
