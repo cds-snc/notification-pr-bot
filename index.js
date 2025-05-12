@@ -52,7 +52,7 @@ const PROJECTS_LAMBDAS = [
     repoName: "notification-lambdas",
     manifestFile: ".github/workflows/helmfile_production_apply.yaml",
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "sesemailcallbacks",
+    ecrName: "ses_to_sqs_email_callbacks",
   },
 ]
 
