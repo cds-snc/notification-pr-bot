@@ -107,26 +107,53 @@ function shortSha(fullSha) {
     );
   }
   
+  /**
+   * Enhances the Lambda project objects with SHA information from GitHub and manifests
+   * 
+   * This function takes an array of Lambda projects and for each one:
+   * 1. Gets the latest SHA from the GitHub repository
+   * 2. Converts it to a short SHA format
+   * 3. Constructs the new ECR image URL with the latest SHA
+   * 4. Retrieves the current manifest file content
+   * 5. Extracts the current (old) image URL and SHA from the manifest
+   * 
+   * @param {Array} projects - Array of Lambda project objects to be enhanced with SHA information
+   * @returns {Promise<Array>} - Promise resolving to the enhanced array of Lambda project objects
+   */
   async function hydrateLambdasWithSHAs(projects) {
     return await Promise.all(
       projects.map(async (project) => {
+        // Get the latest commit SHA from the repository
         project.headSha = await getHeadSha(project.repoName);
+        
+        // Convert the full SHA to a shorter version (7 characters)
         project.shortSha = shortSha(project.headSha)
+        
+        // Generate the full ECR image URL with the latest SHA
         project.headUrl = getLatestImageUrl(
           projects,
           project.ecrName,
           project.headSha
         );
   
+        // Retrieve the content of the manifest file
         const releaseContent = await getContents(
           "notification-manifests",
           project.manifestFile
         );
   
+        // Decode the Base64 content of the manifest file
         const originalFileContents = Base64.decode(releaseContent.content)
+        
+        // Create a regex to find the current image reference in the manifest
         const re = new RegExp(`${project.ecrName}:\\S*`, "g");
+        
+        // Extract the current image URL from the manifest
         project.oldUrl = originalFileContents.match(re)[0]
+        
+        // Extract the SHA part from the current image URL
         project.oldSha = getLambdaSha(project.oldUrl);
+        
         return project;
       })
     );
