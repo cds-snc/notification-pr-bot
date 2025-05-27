@@ -143,70 +143,93 @@ function shortSha(fullSha) {
 
 // HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+/**
+ * Main function to automate the creation of PRs for updating container image tags in manifests
+ * 
+ * @param {boolean} closePRsFirst - Whether to close existing PRs with the same title prefix before creating a new one
+ * @param {string} titlePrefix - Prefix for the PR title, e.g. "[AUTO-PR]"
+ * @param {Array} projects - Array of regular service projects requiring Helmfile updates
+ * @param {Array} projects_lambdas - Array of Lambda projects requiring manifest updates
+ */
 async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
+  // Get the PR template content from the manifests repo
   const prTemplate = await getContents(
     "notification-manifests",
     ".github/PULL_REQUEST_TEMPLATE.md"
   );
   const issueContent = Base64.decode(prTemplate.content);
 
+  // Fetch the latest SHAs for all projects and update project objects with this information
   await hydrateWithSHAs(projects);
   await hydrateLambdasWithSHAs(projects_lambdas);
 
+  // Group projects by the Helmfile they modify to avoid multiple updates to the same file
   const reducer = (previous, project) => ({ ...previous, [project.helmfileOverride]: (previous[project.helmfileOverride] || []).concat(project) })
   const projectsForFiles = projects.reduce(reducer, {})
 
+  // For each Helmfile, prepare the changes needed by updating the SHA for each project
   var changesToHelmfile = Object.entries(projectsForFiles).map(async ([helmfileOverride, projectsForFile]) => {
-
+    // Get the current content of the Helmfile
     const releaseContent = await getContents(
       "notification-manifests",
       helmfileOverride
     );
 
-
+    // Decode the Base64 content and update the SHA for each project
     var fileContents = Base64.decode(releaseContent.content)
     projectsForFile.forEach((project) => {
       fileContents = updateHelmfileSha(fileContents, project)
     })
 
+    // Encode the modified content back to Base64 and check if it actually changed
     const newReleaseContentBlob = Base64.encode(fileContents);
     const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
 
+    // Return all the information needed for the PR creation
     return { helmfileOverride, newReleaseContentBlob, releaseContent, fileHasChanged }
   })
 
+  // Similar to regular projects, group Lambda projects by the manifest file they modify
   const lambdaReducer = (previous, project) => ({ ...previous, [project.manifestFile]: (previous[project.manifestFile] || []).concat(project) })
   const lambdaProjectsForFiles = projects_lambdas.reduce(lambdaReducer, {})
 
+  // For each Lambda manifest file, prepare the changes needed by updating the SHA for each Lambda
   var changesToLambdaFiles = Object.entries(lambdaProjectsForFiles).map(async ([manifestFile, projectsForFile]) => {
-
+    // Get the current content of the manifest file
     const releaseContent = await getContents(
       "notification-manifests",
       manifestFile
     );
 
+    // Decode the Base64 content and update the SHA for each Lambda project
     var fileContents = Base64.decode(releaseContent.content)
     projectsForFile.forEach((project) => {
       fileContents = updateLambdaSha(fileContents, project)
     })
 
+    // Encode the modified content back to Base64 and check if it actually changed
     const newReleaseContentBlob = Base64.encode(fileContents);
     const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
 
+    // Return all the information needed for the PR creation
     return { manifestFile, newReleaseContentBlob, releaseContent, fileHasChanged }
   })
 
- 
+  // Wait for all async operations to complete
   changesToHelmfile = await Promise.all(changesToHelmfile)
   changesToLambdaFiles = await Promise.all(changesToLambdaFiles)
 
+  // Check if any files actually changed
   const helmFilesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
   const lambdaFilesHaveChanged = changesToLambdaFiles.some(({ fileHasChanged }) => fileHasChanged)
 
+  // Only create a PR if there are actually changes to be made
   if (helmFilesHaveChanged || lambdaFilesHaveChanged) {
+    // If requested, close any existing PRs with the same title prefix
     if (closePRsFirst) {
       await closePRs(titlePrefix);
     }
+    // Create the PR with all the changes
     await createPR(titlePrefix, projects, projects_lambdas, issueContent, changesToHelmfile, changesToLambdaFiles);
   }
 }
