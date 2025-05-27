@@ -164,7 +164,18 @@ function shortSha(fullSha) {
     return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
   }
   
+  /**
+   * Updates the Lambda image SHA in the manifest file content
+   * 
+   * This function replaces the old SHA reference with the new SHA in the Lambda image tag
+   * within the manifest file content.
+   * 
+   * @param {string} content - The content of the manifest file
+   * @param {Object} project - The Lambda project object containing ecrName, oldSha, and headSha
+   * @returns {string} - The updated manifest file content with the new SHA
+   */
   function updateLambdaSha(content, project) {
+    // Replace the old image tag with the new one by swapping the SHA
     return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
   }
 
