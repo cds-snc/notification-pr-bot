@@ -52,6 +52,12 @@ const PROJECTS_LAMBDAS = [
     repoName: "notification-lambdas",
     manifestFile: ".github/workflows/helmfile_production_apply.yaml",
     ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+    ecrName: "system_status",
+  },
+  {
+    repoName: "notification-lambdas",
+    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
+    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
     ecrName: "ses_to_sqs_email_callbacks",
   },
 ]
@@ -125,7 +131,11 @@ function shortSha(fullSha) {
   
         const originalFileContents = Base64.decode(releaseContent.content)
         const re = new RegExp(`${project.ecrName}:\\S*`, "g");
-        project.oldUrl = originalFileContents.match(re)[0]
+        matches = originalFileContents.match(re);
+        console.log(`re for ${project.ecrName}:`, re);
+        console.log(`Original file contents for ${project.ecrName}:`, originalFileContents);
+        console.log(`Matches for ${project.ecrName}:`, matches);
+        project.oldUrl = matches[0]
         project.oldSha = getLambdaSha(project.oldUrl);
         return project;
       })
