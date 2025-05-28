@@ -132,9 +132,6 @@ function shortSha(fullSha) {
         const originalFileContents = Base64.decode(releaseContent.content)
         const re = new RegExp(`${project.ecrName}:\\S*`, "g");
         matches = originalFileContents.match(re);
-        console.log(`re for ${project.ecrName}:`, re);
-        console.log(`Original file contents for ${project.ecrName}:`, originalFileContents);
-        console.log(`Matches for ${project.ecrName}:`, matches);
         project.oldUrl = matches[0]
         project.oldSha = getLambdaSha(project.oldUrl);
         return project;
