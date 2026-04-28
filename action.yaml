@@ -1,29 +1,5 @@
 name: 'Notification PR Bot'
 description: 'Creates automated production deployment PRs for a cds-snc target repository'
-inputs:
-  token:
-    description: 'GitHub token with repo and workflow permissions'
-    required: true
-  target_repo:
-    description: 'cds-snc repository to open the release PR against'
-    required: false
-    default: 'notification-manifests'
-  title_prefix:
-    description: 'Prefix used on auto-generated PR titles (used to identify and close stale PRs)'
-    required: false
-    default: '[AUTO-PR]'
-  pr_template_path:
-    description: 'Path to the PR template file inside the target repository'
-    required: false
-    default: ''
-  projects:
-    description: 'Optional JSON override for project image updates'
-    required: false
-    default: ''
-  projects_lambdas:
-    description: 'Optional JSON override for Lambda image updates'
-    required: false
-    default: ''
 runs:
   using: 'node12'
   main: 'dist/index.js'

@@ -7164,13 +7164,9 @@ const { AWS_ECR_URL, TARGET_REPO, closePRs, createPR, getContents, getHeadSha } 
 const { getRepoDefaults } = __nccwpck_require__(4)
 
 // Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Values can be supplied as GitHub Actions inputs (INPUT_* env vars) or as plain
-// environment variables.  The helpers below check both forms so the bot works
-// whether it is invoked as a GitHub Action (via `with:`) or run locally.
+// Values are provided via environment variables.
 
 function getInput(name, defaultValue) {
-  const actionInput = process.env[`INPUT_${name.toUpperCase()}`];
-  if (actionInput !== undefined && actionInput !== "") return actionInput;
   const envVar = process.env[name];
   if (envVar !== undefined && envVar !== "") return envVar;
   return defaultValue;
