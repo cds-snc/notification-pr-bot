@@ -3,19 +3,22 @@
 Automatically creates production deployment PRs against a configurable target
 repository.  Out of the box it is set up for
 [notification-manifests](https://github.com/cds-snc/notification-manifests),
-but every aspect of that configuration can be overridden via inputs so the bot
-can be reused for any repository.
+and it includes built-in defaults for
+[notification-terraform](https://github.com/cds-snc/notification-terraform).
+
+Set `target_repo` and the bot applies the matching defaults for title prefix,
+template path, and image update config.
 
 ## Inputs / environment variables
 
 | Input (action `with:`) | Environment variable | Default | Description |
 |---|---|---|---|
 | `token` | `TOKEN` | *(required)* | GitHub token with `repo` and `workflow` scopes |
-| `target_repo` | `TARGET_REPO` | `notification-manifests` | cds-snc repository to open the release PR against |
-| `title_prefix` | `TITLE_PREFIX` | `[AUTO-PR]` | Prefix on auto-generated PR titles (also used to close stale PRs) |
-| `pr_template_path` | `PR_TEMPLATE_PATH` | `.github/PULL_REQUEST_TEMPLATE.md` | Path to the PR template file inside the target repository |
-| `projects` | `PROJECTS` | *(see index.js)* | JSON array of helmfile project configurations |
-| `projects_lambdas` | `PROJECTS_LAMBDAS` | *(see index.js)* | JSON array of Lambda image project configurations |
+| `target_repo` | `TARGET_REPO` | `notification-manifests` | Target repo. Currently tuned for `notification-manifests` and `notification-terraform` |
+| `title_prefix` | `TITLE_PREFIX` | target-specific | Optional override for PR title prefix |
+| `pr_template_path` | `PR_TEMPLATE_PATH` | target-specific | Optional override for PR template path |
+| `projects` | `PROJECTS` | target-specific | Optional JSON override for project image updates |
+| `projects_lambdas` | `PROJECTS_LAMBDAS` | target-specific | Optional JSON override for Lambda image updates |
 
 When the bot is invoked as a GitHub Action the values are read from the `with:`
 block.  When run locally they can be set as plain environment variables.
@@ -26,26 +29,28 @@ block.  When run locally they can be set as plain environment variables.
 - uses: cds-snc/notification-pr-bot@main
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
-    target_repo: my-release-repo
-    title_prefix: '[AUTO-RELEASE]'
-    pr_template_path: '.github/PULL_REQUEST_TEMPLATE.md'
-    projects: |
-      [
-        {
-          "repoName": "my-app",
-          "helmfileOverride": "helmfile/overrides/production.env",
-          "helmfileTagKey": "APP_DOCKER_TAG",
-          "ecrUrl": "public.ecr.aws/cds-snc",
-          "ecrName": "my-app"
-        }
-      ]
-    projects_lambdas: '[]'
+    target_repo: notification-manifests
 ```
+
+Or for terraform:
+
+```yaml
+- uses: cds-snc/notification-pr-bot@main
+  with:
+    token: ${{ secrets.GITHUB_TOKEN }}
+    target_repo: notification-terraform
+```
+
+Advanced use: pass `projects` / `projects_lambdas` JSON only if you need to
+override the built-in repo defaults.
 
 ## Development
 
 Edit the [index.js](index.js) file as needed and then run the build command to
 produce a single artifact in the `dist` folder.
+
+Target-specific defaults for `notification-manifests` and
+`notification-terraform` are defined in [repo-defaults.js](repo-defaults.js).
 
 ```shell
 npm run build
@@ -58,9 +63,7 @@ and `workflow` scopes, then pass it along with any overrides you need:
 
 ```shell
 TOKEN="${YOUR_TOKEN}" \
-TARGET_REPO="my-repo" \
-PROJECTS='[{"repoName":"my-app","helmfileOverride":"helmfile/overrides/production.env","helmfileTagKey":"APP_DOCKER_TAG","ecrUrl":"public.ecr.aws/my-org","ecrName":"my-app"}]' \
-PROJECTS_LAMBDAS='[]' \
+TARGET_REPO="notification-manifests" \
 node index.js
 ```
 
@@ -68,7 +71,7 @@ Or export the variables for repeated runs:
 
 ```shell
 export TOKEN="${YOUR_TOKEN}"
-export TARGET_REPO="my-repo"
+export TARGET_REPO="notification-terraform"
 node index.js
 ```
 

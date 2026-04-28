@@ -2,6 +2,7 @@ const Base64 = require("js-base64").Base64;
 const process = require("process");
 
 const { AWS_ECR_URL, TARGET_REPO, closePRs, createPR, getContents, getHeadSha } = require("./github")
+const { getRepoDefaults } = require("./repo-defaults")
 
 // Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Values can be supplied as GitHub Actions inputs (INPUT_* env vars) or as plain
@@ -27,71 +28,13 @@ function getJsonInput(name, defaultValue) {
   }
 }
 
-const TITLE_PREFIX = getInput("TITLE_PREFIX", "[AUTO-PR]");
-const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", ".github/PULL_REQUEST_TEMPLATE.md");
-
 // Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-const DEFAULT_PROJECTS = [
-  {
-    repoName: "notification-api",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "API_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-api",
-  },
-  {
-    repoName: "notification-admin",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "ADMIN_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-admin",
-  },
-  {
-    repoName: "notification-document-download-api",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "DOCUMENT_DOWNLOAD_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-document-download-api",
-  },
-  {
-    repoName: "notification-documentation",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "DOCUMENTATION_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-documentation",
-  },
-];
-
-const DEFAULT_PROJECTS_LAMBDAS = [
-  {
-    repoName: "notification-api",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "api-lambda",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "heartbeat",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "system_status",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "ses_to_sqs_email_callbacks",
-  },
-]
-
-const PROJECTS = getJsonInput("PROJECTS", DEFAULT_PROJECTS);
-const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", DEFAULT_PROJECTS_LAMBDAS);
+const repoDefaults = getRepoDefaults(TARGET_REPO, AWS_ECR_URL);
+const TITLE_PREFIX = getInput("TITLE_PREFIX", repoDefaults.titlePrefix);
+const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", repoDefaults.prTemplatePath);
+const PROJECTS = getJsonInput("PROJECTS", repoDefaults.projects);
+const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", repoDefaults.projectsLambdas);
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

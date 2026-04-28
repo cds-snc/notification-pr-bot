@@ -28,7 +28,7 @@ async function closePRs(titlePrefix) {
     state: "open",
   });
 
-  prs.forEach(async (pr) => {
+  for (const pr of prs) {
     if (pr.title.startsWith(titlePrefix)) {
       console.log(`Closing PR ${pr.title}`);
       await octokit.rest.pulls.update({
@@ -43,7 +43,7 @@ async function closePRs(titlePrefix) {
         ref: `heads/${pr.head.ref}`,
       });
     }
-  });
+  }
 }
 
 async function createPR(
@@ -137,20 +137,12 @@ async function buildLogs(projects) {
 
   logs = logs.join("\n\n");
 
-  try {
-    if (await isNotLatestManifestsVersion()) {
-      logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-    }
-  } catch (e) {
-    console.log(`Could not check manifests version for ${TARGET_REPO}: ${e.message}`);
+  if (TARGET_REPO === "notification-manifests" && await isNotLatestManifestsVersion()) {
+    logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
   }
 
-  try {
-    if (await isNotLatestTerraformVersion()) {
-      logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-    }
-  } catch (e) {
-    console.log(`Could not check Terraform version for ${TARGET_REPO}: ${e.message}`);
+  if (TARGET_REPO === "notification-terraform" && await isNotLatestTerraformVersion()) {
+    logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
   }
 
   return logs;

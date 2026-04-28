@@ -15,13 +15,13 @@ inputs:
   pr_template_path:
     description: 'Path to the PR template file inside the target repository'
     required: false
-    default: '.github/PULL_REQUEST_TEMPLATE.md'
+    default: ''
   projects:
-    description: 'JSON array of helmfile project configurations'
+    description: 'Optional JSON override for project image updates'
     required: false
     default: ''
   projects_lambdas:
-    description: 'JSON array of Lambda image project configurations'
+    description: 'Optional JSON override for Lambda image updates'
     required: false
     default: ''
 runs:

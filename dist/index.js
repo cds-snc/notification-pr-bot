@@ -34,7 +34,7 @@ async function closePRs(titlePrefix) {
     state: "open",
   });
 
-  prs.forEach(async (pr) => {
+  for (const pr of prs) {
     if (pr.title.startsWith(titlePrefix)) {
       console.log(`Closing PR ${pr.title}`);
       await octokit.rest.pulls.update({
@@ -49,7 +49,7 @@ async function closePRs(titlePrefix) {
         ref: `heads/${pr.head.ref}`,
       });
     }
-  });
+  }
 }
 
 async function createPR(
@@ -143,20 +143,12 @@ async function buildLogs(projects) {
 
   logs = logs.join("\n\n");
 
-  try {
-    if (await isNotLatestManifestsVersion()) {
-      logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-    }
-  } catch (e) {
-    console.log(`Could not check manifests version for ${TARGET_REPO}: ${e.message}`);
+  if (TARGET_REPO === "notification-manifests" && await isNotLatestManifestsVersion()) {
+    logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
   }
 
-  try {
-    if (await isNotLatestTerraformVersion()) {
-      logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-    }
-  } catch (e) {
-    console.log(`Could not check Terraform version for ${TARGET_REPO}: ${e.message}`);
+  if (TARGET_REPO === "notification-terraform" && await isNotLatestTerraformVersion()) {
+    logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
   }
 
   return logs;
@@ -6967,6 +6959,91 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 4:
+/***/ ((module) => {
+
+function getRepoDefaults(targetRepo, awsEcrUrl) {
+  const manifestsProjects = [
+    {
+      repoName: "notification-api",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "API_DOCKER_TAG",
+      ecrUrl: awsEcrUrl,
+      ecrName: "notify-api",
+    },
+    {
+      repoName: "notification-admin",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "ADMIN_DOCKER_TAG",
+      ecrUrl: awsEcrUrl,
+      ecrName: "notify-admin",
+    },
+    {
+      repoName: "notification-document-download-api",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "DOCUMENT_DOWNLOAD_DOCKER_TAG",
+      ecrUrl: awsEcrUrl,
+      ecrName: "notify-document-download-api",
+    },
+    {
+      repoName: "notification-documentation",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "DOCUMENTATION_DOCKER_TAG",
+      ecrUrl: awsEcrUrl,
+      ecrName: "notify-documentation",
+    },
+  ];
+
+  const manifestsLambdas = [
+    {
+      repoName: "notification-api",
+      manifestFile: ".github/workflows/helmfile_production_apply.yaml",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+      ecrName: "api-lambda",
+    },
+    {
+      repoName: "notification-lambdas",
+      manifestFile: ".github/workflows/helmfile_production_apply.yaml",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+      ecrName: "heartbeat",
+    },
+    {
+      repoName: "notification-lambdas",
+      manifestFile: ".github/workflows/helmfile_production_apply.yaml",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+      ecrName: "system_status",
+    },
+    {
+      repoName: "notification-lambdas",
+      manifestFile: ".github/workflows/helmfile_production_apply.yaml",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
+      ecrName: "ses_to_sqs_email_callbacks",
+    },
+  ];
+
+  const defaultsByRepo = {
+    "notification-manifests": {
+      titlePrefix: "[AUTO-PR]",
+      prTemplatePath: ".github/PULL_REQUEST_TEMPLATE.md",
+      projects: manifestsProjects,
+      projectsLambdas: manifestsLambdas,
+    },
+    "notification-terraform": {
+      titlePrefix: "[AUTO-PR]",
+      prTemplatePath: "pull_request_template.md",
+      projects: [],
+      projectsLambdas: [],
+    },
+  };
+
+  return defaultsByRepo[targetRepo] || defaultsByRepo["notification-manifests"];
+}
+
+module.exports = { getRepoDefaults };
+
+
+/***/ }),
+
 /***/ 877:
 /***/ ((module) => {
 
@@ -7084,6 +7161,7 @@ const Base64 = (__nccwpck_require__(139).Base64);
 const process = __nccwpck_require__(282);
 
 const { AWS_ECR_URL, TARGET_REPO, closePRs, createPR, getContents, getHeadSha } = __nccwpck_require__(535)
+const { getRepoDefaults } = __nccwpck_require__(4)
 
 // Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Values can be supplied as GitHub Actions inputs (INPUT_* env vars) or as plain
@@ -7109,71 +7187,13 @@ function getJsonInput(name, defaultValue) {
   }
 }
 
-const TITLE_PREFIX = getInput("TITLE_PREFIX", "[AUTO-PR]");
-const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", ".github/PULL_REQUEST_TEMPLATE.md");
-
 // Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-const DEFAULT_PROJECTS = [
-  {
-    repoName: "notification-api",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "API_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-api",
-  },
-  {
-    repoName: "notification-admin",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "ADMIN_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-admin",
-  },
-  {
-    repoName: "notification-document-download-api",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "DOCUMENT_DOWNLOAD_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-document-download-api",
-  },
-  {
-    repoName: "notification-documentation",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "DOCUMENTATION_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-documentation",
-  },
-];
-
-const DEFAULT_PROJECTS_LAMBDAS = [
-  {
-    repoName: "notification-api",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "api-lambda",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "heartbeat",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "system_status",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "ses_to_sqs_email_callbacks",
-  },
-]
-
-const PROJECTS = getJsonInput("PROJECTS", DEFAULT_PROJECTS);
-const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", DEFAULT_PROJECTS_LAMBDAS);
+const repoDefaults = getRepoDefaults(TARGET_REPO, AWS_ECR_URL);
+const TITLE_PREFIX = getInput("TITLE_PREFIX", repoDefaults.titlePrefix);
+const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", repoDefaults.prTemplatePath);
+const PROJECTS = getJsonInput("PROJECTS", repoDefaults.projects);
+const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", repoDefaults.projectsLambdas);
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
