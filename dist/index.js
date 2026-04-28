@@ -7265,9 +7265,6 @@ function shortSha(fullSha) {
         const originalFileContents = Base64.decode(releaseContent.content)
         const re = new RegExp(`${project.ecrName}:\\S*`, "g");
         const matches = originalFileContents.match(re);
-        if (!matches || matches.length === 0) {
-          throw new Error(`Could not find image reference for ${project.ecrName} in ${project.manifestFile}`);
-        }
         project.oldUrl = matches[0]
         project.oldSha = getLambdaSha(project.oldUrl);
         return project;
