@@ -11,7 +11,12 @@ const process = require("process");
 const myToken = process.env.TOKEN;
 const MyOctokit = Octokit.plugin(restEndpointMethods);
 const octokit = new MyOctokit({ auth: myToken });
+
 const GH_CDS = "cds-snc";
+// TARGET_REPO is read from an environment variable so the same bot can be
+// pointed at any cds-snc repository (e.g. notification-manifests or
+// notification-terraform).  The default preserves the original behaviour.
+const TARGET_REPO = process.env.TARGET_REPO || "notification-manifests";
 const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -19,7 +24,7 @@ const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 async function closePRs(titlePrefix) {
   const { data: prs } = await octokit.rest.pulls.list({
     owner: GH_CDS,
-    repo: "notification-manifests",
+    repo: TARGET_REPO,
     state: "open",
   });
 
@@ -28,13 +33,13 @@ async function closePRs(titlePrefix) {
       console.log(`Closing PR ${pr.title}`);
       await octokit.rest.pulls.update({
         owner: GH_CDS,
-        repo: "notification-manifests",
+        repo: TARGET_REPO,
         pull_number: pr.number,
         state: "closed",
       });
       await octokit.rest.git.deleteRef({
         owner: GH_CDS,
-        repo: "notification-manifests",
+        repo: TARGET_REPO,
         ref: `heads/${pr.head.ref}`,
       });
     }
@@ -49,16 +54,16 @@ async function createPR(
 
 ) {
   const branchName = `release-${new Date().getTime()}`;
-  const manifestsSha = await getHeadSha("notification-manifests");
+  const targetRepoSha = await getHeadSha(TARGET_REPO);
   // pass in the projects and projects_lambdas so that the changes for all repos
   // will be listed in the PR
   const logs = await buildLogs([...projects, ...projects_lambdas]);
 
   const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
-    repo: "notification-manifests",
+    repo: TARGET_REPO,
     ref: `refs/heads/${branchName}`,
-    sha: manifestsSha,
+    sha: targetRepoSha,
   });
 
   const helmManifestUpdates = projects
@@ -70,7 +75,7 @@ async function createPR(
   for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of changesToHelmfile) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
-      repo: "notification-manifests",
+      repo: TARGET_REPO,
       branch: branchName,
       sha: releaseContent.sha,
       path: helmfileOverride,
@@ -88,7 +93,7 @@ async function createPR(
   for (const { manifestFile, releaseContent, newReleaseContentBlob } of changesToLambdaFiles) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
-      repo: "notification-manifests",
+      repo: TARGET_REPO,
       branch: branchName,
       sha: releaseContent.sha,
       path: manifestFile,
@@ -101,7 +106,7 @@ async function createPR(
   console.log(`Creating PR ${title}`);
   const pr = await octokit.rest.pulls.create({
     owner: GH_CDS,
-    repo: "notification-manifests",
+    repo: TARGET_REPO,
     title: title,
     head: branchName,
     base: "main",
@@ -131,12 +136,21 @@ async function buildLogs(projects) {
   logs = await Promise.all(logs);
 
   logs = logs.join("\n\n");
-  if (await isNotLatestManifestsVersion()) {
-    logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+
+  try {
+    if (await isNotLatestManifestsVersion()) {
+      logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+    }
+  } catch (e) {
+    console.log(`Could not check manifests version for ${TARGET_REPO}: ${e.message}`);
   }
 
-  if (await isNotLatestTerraformVersion()) {
-    logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+  try {
+    if (await isNotLatestTerraformVersion()) {
+      logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+    }
+  } catch (e) {
+    console.log(`Could not check Terraform version for ${TARGET_REPO}: ${e.message}`);
   }
 
   return logs;
@@ -226,4 +240,4 @@ async function isNotLatestTerraformVersion() {
 }
 
 
-module.exports = { GH_CDS, AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha }
+module.exports = { GH_CDS, AWS_ECR_URL, TARGET_REPO, closePRs, createPR, getContents, getHeadSha }

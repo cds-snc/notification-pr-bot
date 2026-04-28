@@ -17,7 +17,12 @@ const process = __nccwpck_require__(282);
 const myToken = process.env.TOKEN;
 const MyOctokit = Octokit.plugin(restEndpointMethods);
 const octokit = new MyOctokit({ auth: myToken });
+
 const GH_CDS = "cds-snc";
+// TARGET_REPO is read from an environment variable so the same bot can be
+// pointed at any cds-snc repository (e.g. notification-manifests or
+// notification-terraform).  The default preserves the original behaviour.
+const TARGET_REPO = process.env.TARGET_REPO || "notification-manifests";
 const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -25,7 +30,7 @@ const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 async function closePRs(titlePrefix) {
   const { data: prs } = await octokit.rest.pulls.list({
     owner: GH_CDS,
-    repo: "notification-manifests",
+    repo: TARGET_REPO,
     state: "open",
   });
 
@@ -34,13 +39,13 @@ async function closePRs(titlePrefix) {
       console.log(`Closing PR ${pr.title}`);
       await octokit.rest.pulls.update({
         owner: GH_CDS,
-        repo: "notification-manifests",
+        repo: TARGET_REPO,
         pull_number: pr.number,
         state: "closed",
       });
       await octokit.rest.git.deleteRef({
         owner: GH_CDS,
-        repo: "notification-manifests",
+        repo: TARGET_REPO,
         ref: `heads/${pr.head.ref}`,
       });
     }
@@ -55,16 +60,16 @@ async function createPR(
 
 ) {
   const branchName = `release-${new Date().getTime()}`;
-  const manifestsSha = await getHeadSha("notification-manifests");
+  const targetRepoSha = await getHeadSha(TARGET_REPO);
   // pass in the projects and projects_lambdas so that the changes for all repos
   // will be listed in the PR
   const logs = await buildLogs([...projects, ...projects_lambdas]);
 
   const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
-    repo: "notification-manifests",
+    repo: TARGET_REPO,
     ref: `refs/heads/${branchName}`,
-    sha: manifestsSha,
+    sha: targetRepoSha,
   });
 
   const helmManifestUpdates = projects
@@ -76,7 +81,7 @@ async function createPR(
   for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of changesToHelmfile) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
-      repo: "notification-manifests",
+      repo: TARGET_REPO,
       branch: branchName,
       sha: releaseContent.sha,
       path: helmfileOverride,
@@ -94,7 +99,7 @@ async function createPR(
   for (const { manifestFile, releaseContent, newReleaseContentBlob } of changesToLambdaFiles) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
-      repo: "notification-manifests",
+      repo: TARGET_REPO,
       branch: branchName,
       sha: releaseContent.sha,
       path: manifestFile,
@@ -107,7 +112,7 @@ async function createPR(
   console.log(`Creating PR ${title}`);
   const pr = await octokit.rest.pulls.create({
     owner: GH_CDS,
-    repo: "notification-manifests",
+    repo: TARGET_REPO,
     title: title,
     head: branchName,
     base: "main",
@@ -137,12 +142,21 @@ async function buildLogs(projects) {
   logs = await Promise.all(logs);
 
   logs = logs.join("\n\n");
-  if (await isNotLatestManifestsVersion()) {
-    logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+
+  try {
+    if (await isNotLatestManifestsVersion()) {
+      logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+    }
+  } catch (e) {
+    console.log(`Could not check manifests version for ${TARGET_REPO}: ${e.message}`);
   }
 
-  if (await isNotLatestTerraformVersion()) {
-    logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+  try {
+    if (await isNotLatestTerraformVersion()) {
+      logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+    }
+  } catch (e) {
+    console.log(`Could not check Terraform version for ${TARGET_REPO}: ${e.message}`);
   }
 
   return logs;
@@ -232,7 +246,7 @@ async function isNotLatestTerraformVersion() {
 }
 
 
-module.exports = { GH_CDS, AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha }
+module.exports = { GH_CDS, AWS_ECR_URL, TARGET_REPO, closePRs, createPR, getContents, getHeadSha }
 
 
 /***/ }),
@@ -7067,12 +7081,40 @@ var __webpack_exports__ = {};
 // This entry need to be wrapped in an IIFE because it need to be isolated against other modules in the chunk.
 (() => {
 const Base64 = (__nccwpck_require__(139).Base64);
+const process = __nccwpck_require__(282);
 
-const { AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = __nccwpck_require__(535)
+const { AWS_ECR_URL, TARGET_REPO, closePRs, createPR, getContents, getHeadSha } = __nccwpck_require__(535)
+
+// Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Values can be supplied as GitHub Actions inputs (INPUT_* env vars) or as plain
+// environment variables.  The helpers below check both forms so the bot works
+// whether it is invoked as a GitHub Action (via `with:`) or run locally.
+
+function getInput(name, defaultValue) {
+  const actionInput = process.env[`INPUT_${name.toUpperCase()}`];
+  if (actionInput !== undefined && actionInput !== "") return actionInput;
+  const envVar = process.env[name];
+  if (envVar !== undefined && envVar !== "") return envVar;
+  return defaultValue;
+}
+
+function getJsonInput(name, defaultValue) {
+  const raw = getInput(name, null);
+  if (raw === null) return defaultValue;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error(`Failed to parse ${name} as JSON: ${e.message}`);
+    return defaultValue;
+  }
+}
+
+const TITLE_PREFIX = getInput("TITLE_PREFIX", "[AUTO-PR]");
+const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", ".github/PULL_REQUEST_TEMPLATE.md");
 
 // Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-const PROJECTS = [
+const DEFAULT_PROJECTS = [
   {
     repoName: "notification-api",
     helmfileOverride: "helmfile/overrides/production.env",
@@ -7103,7 +7145,7 @@ const PROJECTS = [
   },
 ];
 
-const PROJECTS_LAMBDAS = [
+const DEFAULT_PROJECTS_LAMBDAS = [
   {
     repoName: "notification-api",
     manifestFile: ".github/workflows/helmfile_production_apply.yaml",
@@ -7129,6 +7171,9 @@ const PROJECTS_LAMBDAS = [
     ecrName: "ses_to_sqs_email_callbacks",
   },
 ]
+
+const PROJECTS = getJsonInput("PROJECTS", DEFAULT_PROJECTS);
+const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", DEFAULT_PROJECTS_LAMBDAS);
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -7168,7 +7213,7 @@ function shortSha(fullSha) {
   
         // Patch the helmfile tags
         const helmfileContent = await getContents(
-          "notification-manifests",
+          TARGET_REPO,
           project.helmfileOverride
         );
   
@@ -7193,13 +7238,16 @@ function shortSha(fullSha) {
         );
   
         const releaseContent = await getContents(
-          "notification-manifests",
+          TARGET_REPO,
           project.manifestFile
         );
   
         const originalFileContents = Base64.decode(releaseContent.content)
         const re = new RegExp(`${project.ecrName}:\\S*`, "g");
-        matches = originalFileContents.match(re);
+        const matches = originalFileContents.match(re);
+        if (!matches || matches.length === 0) {
+          throw new Error(`Could not find image reference for ${project.ecrName} in ${project.manifestFile}`);
+        }
         project.oldUrl = matches[0]
         project.oldSha = getLambdaSha(project.oldUrl);
         return project;
@@ -7220,8 +7268,8 @@ function shortSha(fullSha) {
 
 async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   const prTemplate = await getContents(
-    "notification-manifests",
-    ".github/PULL_REQUEST_TEMPLATE.md"
+    TARGET_REPO,
+    PR_TEMPLATE_PATH
   );
   const issueContent = Base64.decode(prTemplate.content);
 
@@ -7234,7 +7282,7 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   var changesToHelmfile = Object.entries(projectsForFiles).map(async ([helmfileOverride, projectsForFile]) => {
 
     const releaseContent = await getContents(
-      "notification-manifests",
+      TARGET_REPO,
       helmfileOverride
     );
 
@@ -7256,7 +7304,7 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   var changesToLambdaFiles = Object.entries(lambdaProjectsForFiles).map(async ([manifestFile, projectsForFile]) => {
 
     const releaseContent = await getContents(
-      "notification-manifests",
+      TARGET_REPO,
       manifestFile
     );
 
@@ -7289,7 +7337,7 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-main(true, "[AUTO-PR]", PROJECTS, PROJECTS_LAMBDAS);
+main(true, TITLE_PREFIX, PROJECTS, PROJECTS_LAMBDAS);
 
 })();
 
