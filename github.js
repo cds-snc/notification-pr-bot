@@ -46,37 +46,11 @@ async function closePRs(titlePrefix) {
   }
 }
 
-function replaceSectionBody(template, heading, body) {
-  const lines = template.split("\n");
-  const headingIndex = lines.findIndex((line) => line.trim() === heading);
-
-  if (headingIndex === -1) {
-    return null;
-  }
-
-  let start = headingIndex + 1;
-  while (start < lines.length && lines[start].trim() === "") {
-    start += 1;
-  }
-
-  let end = start;
-  while (end < lines.length && !lines[end].startsWith("## ")) {
-    end += 1;
-  }
-
-  const before = lines.slice(0, headingIndex + 1).join("\n");
-  const after = lines.slice(end).join("\n").replace(/^\n+/, "");
-
-  return `${before}\n\n${body}${after ? `\n\n${after}` : ""}`;
-}
+const GENERATED_SUMMARY_PLACEHOLDER = "<!-- RELEASE_SUMMARY -->";
 
 function injectGeneratedContent(issueContent, logs) {
-  const bySection =
-    replaceSectionBody(issueContent, "## Summary", logs) ||
-    replaceSectionBody(issueContent, "## Provide some background on the changes", logs);
-
-  if (bySection) {
-    return bySection;
+  if (issueContent.includes(GENERATED_SUMMARY_PLACEHOLDER)) {
+    return issueContent.replace(GENERATED_SUMMARY_PLACEHOLDER, logs);
   }
 
   return issueContent
@@ -392,21 +366,6 @@ const getLatestTag = async (repo) => {
   // Return the first valid tag (GitHub API returns them in reverse chronological order)
   return versionTags[0].name;
 };
-async function isNotLatestManifestsVersion() {
-  const releaseConfig = await getContents(
-    "notification-manifests",
-    "VERSION"
-  );
-
-  const prodVersion = Base64.decode(releaseConfig.content);
-  const latestVersion = await getLatestTag("notification-manifests");
-  return prodVersion != latestVersion;
-}
-
-async function isNotLatestTerraformVersion() {
-  const terraformVersionChange = await getTerraformVersionChange();
-  return terraformVersionChange && terraformVersionChange.fileHasChanged;
-}
 
 async function getTerraformVersionChange(force = false) {
   const prodWorkflow = await getContents(
