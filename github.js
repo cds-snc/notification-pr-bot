@@ -51,6 +51,7 @@ async function createPR(
   projects, projects_lambdas,
   issueContent,
   changesToHelmfile, changesToLambdaFiles,
+  extraFileChanges,
 
 ) {
   const branchName = `release-${new Date().getTime()}`;
@@ -66,13 +67,16 @@ async function createPR(
     sha: targetRepoSha,
   });
 
+  const changedHelmfileUpdates = changesToHelmfile.filter(({ fileHasChanged }) => fileHasChanged);
+  const changedLambdaFileUpdates = changesToLambdaFiles.filter(({ fileHasChanged }) => fileHasChanged);
+
   const helmManifestUpdates = projects
     .map((project) => {
       return `${project.repoName}:${project.shortSha}`;
     })
     .join(" and ");
 
-  for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of changesToHelmfile) {
+  for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of changedHelmfileUpdates) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
       repo: TARGET_REPO,
@@ -90,7 +94,7 @@ async function createPR(
     })
     .join(" and ");
 
-  for (const { manifestFile, releaseContent, newReleaseContentBlob } of changesToLambdaFiles) {
+  for (const { manifestFile, releaseContent, newReleaseContentBlob } of changedLambdaFileUpdates) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
       repo: TARGET_REPO,
@@ -100,6 +104,23 @@ async function createPR(
       message: `Updated manifests to ${lambdaManifestUpdates}`,
       content: newReleaseContentBlob,
     })
+  }
+
+  for (const {
+    filePath,
+    releaseContent,
+    newReleaseContentBlob,
+    commitMessage,
+  } of extraFileChanges) {
+    await octokit.rest.repos.createOrUpdateFileContents({
+      owner: GH_CDS,
+      repo: TARGET_REPO,
+      branch: branchName,
+      sha: releaseContent.sha,
+      path: filePath,
+      message: commitMessage,
+      content: newReleaseContentBlob,
+    });
   }
 
   const title = `${titlePrefix} - Automatically generated new release ${new Date().toISOString()}`
@@ -217,6 +238,11 @@ async function isNotLatestManifestsVersion() {
 }
 
 async function isNotLatestTerraformVersion() {
+  const terraformVersionChange = await getTerraformVersionChange();
+  return terraformVersionChange && terraformVersionChange.fileHasChanged;
+}
+
+async function getTerraformVersionChange() {
   const prodWorkflow = await getContents(
     "notification-terraform",
     ".github/workflows/infrastructure_version.txt"
@@ -228,8 +254,28 @@ async function isNotLatestTerraformVersion() {
     ""
   );
 
-  return prodVersion != latestVersion;
+  const fileHasChanged = prodVersion !== latestVersion;
+
+  if (!fileHasChanged) {
+    return null;
+  }
+
+  return {
+    filePath: ".github/workflows/infrastructure_version.txt",
+    releaseContent: prodWorkflow,
+    newReleaseContentBlob: Base64.encode(`${latestVersion}\n`),
+    fileHasChanged: true,
+    commitMessage: `Update infrastructure version to ${latestVersion}`,
+  };
 }
 
-
-module.exports = { GH_CDS, AWS_ECR_URL, TARGET_REPO, closePRs, createPR, getContents, getHeadSha }
+module.exports = {
+  GH_CDS,
+  AWS_ECR_URL,
+  TARGET_REPO,
+  closePRs,
+  createPR,
+  getContents,
+  getHeadSha,
+  getTerraformVersionChange,
+}

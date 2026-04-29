@@ -1,7 +1,15 @@
 const Base64 = require("js-base64").Base64;
 const process = require("process");
 
-const { AWS_ECR_URL, TARGET_REPO, closePRs, createPR, getContents, getHeadSha } = require("./github")
+const {
+  AWS_ECR_URL,
+  TARGET_REPO,
+  closePRs,
+  createPR,
+  getContents,
+  getHeadSha,
+  getTerraformVersionChange,
+} = require("./github")
 const { getRepoDefaults } = require("./repo-defaults")
 
 // Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -179,12 +187,32 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
 
   const helmFilesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
   const lambdaFilesHaveChanged = changesToLambdaFiles.some(({ fileHasChanged }) => fileHasChanged)
+  const extraFileChanges = [];
 
-  if (helmFilesHaveChanged || lambdaFilesHaveChanged) {
+  if (TARGET_REPO === "notification-terraform") {
+    const terraformVersionChange = await getTerraformVersionChange();
+    if (terraformVersionChange && terraformVersionChange.fileHasChanged) {
+      extraFileChanges.push(terraformVersionChange);
+    }
+  }
+
+  const extraFilesHaveChanged = extraFileChanges.some(({ fileHasChanged }) => fileHasChanged)
+
+  if (helmFilesHaveChanged || lambdaFilesHaveChanged || extraFilesHaveChanged) {
     if (closePRsFirst) {
       await closePRs(titlePrefix);
     }
-    await createPR(titlePrefix, projects, projects_lambdas, issueContent, changesToHelmfile, changesToLambdaFiles);
+    await createPR(
+      titlePrefix,
+      projects,
+      projects_lambdas,
+      issueContent,
+      changesToHelmfile,
+      changesToLambdaFiles,
+      extraFileChanges
+    );
+  } else {
+    console.log("No changes detected, skipping PR creation.");
   }
 }
 
