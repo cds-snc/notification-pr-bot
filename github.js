@@ -11,7 +11,12 @@ const process = require("process");
 const myToken = process.env.TOKEN;
 const MyOctokit = Octokit.plugin(restEndpointMethods);
 const octokit = new MyOctokit({ auth: myToken });
+
 const GH_CDS = "cds-snc";
+// TARGET_REPO is read from an environment variable so the same bot can be
+// pointed at any cds-snc repository (e.g. notification-manifests or
+// notification-terraform).  The default preserves the original behaviour.
+const TARGET_REPO = process.env.TARGET_REPO || "notification-manifests";
 const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 
 // Logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -19,26 +24,26 @@ const AWS_ECR_URL = `public.ecr.aws/${GH_CDS}`;
 async function closePRs(titlePrefix) {
   const { data: prs } = await octokit.rest.pulls.list({
     owner: GH_CDS,
-    repo: "notification-manifests",
+    repo: TARGET_REPO,
     state: "open",
   });
 
-  prs.forEach(async (pr) => {
+  for (const pr of prs) {
     if (pr.title.startsWith(titlePrefix)) {
       console.log(`Closing PR ${pr.title}`);
       await octokit.rest.pulls.update({
         owner: GH_CDS,
-        repo: "notification-manifests",
+        repo: TARGET_REPO,
         pull_number: pr.number,
         state: "closed",
       });
       await octokit.rest.git.deleteRef({
         owner: GH_CDS,
-        repo: "notification-manifests",
+        repo: TARGET_REPO,
         ref: `heads/${pr.head.ref}`,
       });
     }
-  });
+  }
 }
 
 async function createPR(
@@ -46,20 +51,24 @@ async function createPR(
   projects, projects_lambdas,
   issueContent,
   changesToHelmfile, changesToLambdaFiles,
+  extraFileChanges,
 
 ) {
   const branchName = `release-${new Date().getTime()}`;
-  const manifestsSha = await getHeadSha("notification-manifests");
+  const targetRepoSha = await getHeadSha(TARGET_REPO);
   // pass in the projects and projects_lambdas so that the changes for all repos
   // will be listed in the PR
-  const logs = await buildLogs([...projects, ...projects_lambdas]);
+  const logs = await buildLogs([...projects, ...projects_lambdas], extraFileChanges);
 
   const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
-    repo: "notification-manifests",
+    repo: TARGET_REPO,
     ref: `refs/heads/${branchName}`,
-    sha: manifestsSha,
+    sha: targetRepoSha,
   });
+
+  const changedHelmfileUpdates = changesToHelmfile.filter(({ fileHasChanged }) => fileHasChanged);
+  const changedLambdaFileUpdates = changesToLambdaFiles.filter(({ fileHasChanged }) => fileHasChanged);
 
   const helmManifestUpdates = projects
     .map((project) => {
@@ -67,10 +76,10 @@ async function createPR(
     })
     .join(" and ");
 
-  for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of changesToHelmfile) {
+  for (const { helmfileOverride, releaseContent, newReleaseContentBlob } of changedHelmfileUpdates) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
-      repo: "notification-manifests",
+      repo: TARGET_REPO,
       branch: branchName,
       sha: releaseContent.sha,
       path: helmfileOverride,
@@ -85,10 +94,10 @@ async function createPR(
     })
     .join(" and ");
 
-  for (const { manifestFile, releaseContent, newReleaseContentBlob } of changesToLambdaFiles) {
+  for (const { manifestFile, releaseContent, newReleaseContentBlob } of changedLambdaFileUpdates) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: GH_CDS,
-      repo: "notification-manifests",
+      repo: TARGET_REPO,
       branch: branchName,
       sha: releaseContent.sha,
       path: manifestFile,
@@ -97,18 +106,34 @@ async function createPR(
     })
   }
 
+  for (const {
+    filePath,
+    releaseContent,
+    newReleaseContentBlob,
+    commitMessage,
+  } of extraFileChanges) {
+    await octokit.rest.repos.createOrUpdateFileContents({
+      owner: GH_CDS,
+      repo: TARGET_REPO,
+      branch: branchName,
+      sha: releaseContent.sha,
+      path: filePath,
+      message: commitMessage,
+      content: newReleaseContentBlob,
+    });
+  }
+
   const title = `${titlePrefix} - Automatically generated new release ${new Date().toISOString()}`
   console.log(`Creating PR ${title}`);
   const pr = await octokit.rest.pulls.create({
     owner: GH_CDS,
-    repo: "notification-manifests",
+    repo: TARGET_REPO,
     title: title,
     head: branchName,
     base: "main",
-    body: issueContent.replace(
-      "> Give details ex. Security patching, content update, more API pods etc",
-      logs
-    ),
+    body: issueContent
+      .replace("> Give details ex. Security patching, content update, more API pods etc", logs)
+      .replace("_TODO: 1-3 sentence description of the changed you're proposing._", logs),
     draft: true,
   });
   return Promise.all([ref, pr]);
@@ -119,7 +144,7 @@ function uniqueByKey(items, key) {
   return [...new Map(items.map(item => [item[key], item])).values()];
 }
 
-async function buildLogs(projects) {
+async function buildLogs(projects, extraFileChanges = []) {
   const uniqueByRepo = uniqueByKey(projects, "repoName");
   let logs = uniqueByRepo.map(async (project) => {
     const msgsCommits = await getCommitMessages(project.repoName, project.oldSha);
@@ -129,17 +154,111 @@ async function buildLogs(projects) {
   });
   
   logs = await Promise.all(logs);
-
   logs = logs.join("\n\n");
-  if (await isNotLatestManifestsVersion()) {
-    logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-  }
 
-  if (await isNotLatestTerraformVersion()) {
-    logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
+  if (extraFileChanges.length > 0) {
+    const tfChange = extraFileChanges.find(c => c.oldVersion);
+    if (tfChange) {
+      const commitLog = await getTerraformModuleCommitSummary(
+        tfChange.oldVersion,
+        tfChange.latestVersion
+      );
+      const extraSummary = `NOTIFICATION-TERRAFORM\n\n${commitLog}`;
+      logs = logs ? `${extraSummary}\n\n${logs}` : extraSummary;
+    } else {
+      const extraSummary = extraFileChanges
+        .map(({ filePath, commitMessage }) => `- \`${filePath}\`: ${commitMessage}`)
+        .join("\n");
+      logs = logs ? `${extraSummary}\n\n${logs}` : extraSummary;
+    }
   }
 
   return logs;
+}
+
+function getTerraformModuleFromPath(path) {
+  const match = path.match(/^aws\/([^/]+)\//);
+  return match ? match[1] : null;
+}
+
+async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
+  const allModules = await getTerraformModules();
+  const oldTagRef = await getTagRef("notification-terraform", oldVersion);
+  const latestTagRef = await getTagRef("notification-terraform", latestVersion);
+
+  if (!oldTagRef || !latestTagRef) {
+    return "_Could not resolve old or latest version tag._";
+  }
+
+  const { data: comparison } = await octokit.rest.repos.compareCommitsWithBasehead({
+    owner: GH_CDS,
+    repo: "notification-terraform",
+    basehead: `${oldTagRef}...${latestTagRef}`,
+  });
+
+  const moduleToCommits = new Map();
+
+  if (comparison.commits && comparison.commits.length > 0) {
+    const commitEntries = await Promise.all(
+      comparison.commits.map(async (commit) => {
+        const { data: commitData } = await octokit.rest.repos.getCommit({
+          owner: GH_CDS,
+          repo: "notification-terraform",
+          ref: commit.sha,
+        });
+
+        const modules = new Set(
+          (commitData.files || [])
+            .map((file) => getTerraformModuleFromPath(file.filename))
+            .filter(Boolean)
+        );
+
+        if (modules.size === 0) {
+          modules.add("other");
+        }
+
+        const authorName = commit.commit.author ? commit.commit.author.name : "Unknown";
+        const message = commit.commit.message.split("\n\n")[0];
+        const safeMessage = message.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+        const bullet = `- [${safeMessage}](${commit.html_url}) by ${authorName}`;
+
+        return { modules, bullet };
+      })
+    );
+
+    for (const { modules, bullet } of commitEntries) {
+      for (const moduleName of modules) {
+        const existing = moduleToCommits.get(moduleName) || [];
+        existing.push(bullet);
+        moduleToCommits.set(moduleName, existing);
+      }
+    }
+  }
+
+  const sortedModules = [...new Set([...allModules, ...moduleToCommits.keys()])].sort();
+  const header = "| Module | Changes |\n| --- | --- |";
+  const rows = sortedModules
+    .map((moduleName) => {
+      const moduleLabel = moduleName === "other" ? "Other" : moduleName;
+      const commits = moduleToCommits.has(moduleName)
+        ? moduleToCommits.get(moduleName).join("<br>")
+        : "_No changes in this release._";
+      return `| ${moduleLabel} | ${commits} |`;
+    })
+    .join("\n");
+
+  return `${header}\n${rows}`;
+}
+
+async function getTerraformModules() {
+  const awsContents = await getContents("notification-terraform", "aws");
+  if (!Array.isArray(awsContents)) {
+    return [];
+  }
+
+  return awsContents
+    .filter((item) => item.type === "dir")
+    .map((item) => item.name);
 }
 
 const getCommitMessages = async (repo, sha) => {
@@ -188,16 +307,41 @@ const getHeadSha = async (repo) => {
   return repoBranch.commit.sha;
 };
 
+const getTagRef = async (repo, version) => {
+  // version may be with or without leading 'v'
+  const candidates = [version, `v${version}`];
+  const { data: tags } = await octokit.rest.repos.listTags({
+    owner: GH_CDS,
+    repo,
+    per_page: 50,
+  });
+  const tag = tags.find(t => candidates.includes(t.name));
+  return tag ? tag.name : null;
+};
+
 const getLatestTag = async (repo) => {
   const {
-    data: [latestTag],
+    data: tags,
   } = await octokit.rest.repos.listTags({
     owner: GH_CDS,
     repo,
-    per_page: 1,
+    per_page: 50,
   });
 
-  return latestTag.name;
+  // Filter for valid version tags (v1.2.3 or just 1.2.3 format)
+  const versionTags = tags.filter(tag => {
+    const name = tag.name;
+    // Match patterns like v2.27.79, 2.27.79, v1.2.3, 1.2.3
+    return /^v?\d+\.\d+\.\d+/.test(name);
+  });
+
+  if (versionTags.length === 0) {
+    // Fallback to first tag if no valid versions found
+    return tags[0]?.name || null;
+  }
+
+  // Return the first valid tag (GitHub API returns them in reverse chronological order)
+  return versionTags[0].name;
 };
 async function isNotLatestManifestsVersion() {
   const releaseConfig = await getContents(
@@ -211,6 +355,11 @@ async function isNotLatestManifestsVersion() {
 }
 
 async function isNotLatestTerraformVersion() {
+  const terraformVersionChange = await getTerraformVersionChange();
+  return terraformVersionChange && terraformVersionChange.fileHasChanged;
+}
+
+async function getTerraformVersionChange(force = false) {
   const prodWorkflow = await getContents(
     "notification-terraform",
     ".github/workflows/infrastructure_version.txt"
@@ -222,8 +371,30 @@ async function isNotLatestTerraformVersion() {
     ""
   );
 
-  return prodVersion != latestVersion;
+  const fileHasChanged = force || prodVersion !== latestVersion;
+
+  if (!fileHasChanged) {
+    return null;
+  }
+
+  return {
+    filePath: ".github/workflows/infrastructure_version.txt",
+    releaseContent: prodWorkflow,
+    newReleaseContentBlob: Base64.encode(`${latestVersion}\n`),
+    fileHasChanged: true,
+    oldVersion: prodVersion,
+    latestVersion,
+    commitMessage: `Update infrastructure version to ${latestVersion}`,
+  };
 }
 
-
-module.exports = { GH_CDS, AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha }
+module.exports = {
+  GH_CDS,
+  AWS_ECR_URL,
+  TARGET_REPO,
+  closePRs,
+  createPR,
+  getContents,
+  getHeadSha,
+  getTerraformVersionChange,
+}

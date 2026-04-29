@@ -1,5 +1,5 @@
 name: 'Notification PR Bot'
-description: 'Small script to make deploy to production PRs for Notify'
+description: 'Creates automated production deployment PRs for a cds-snc target repository'
 runs:
   using: 'node12'
   main: 'dist/index.js'

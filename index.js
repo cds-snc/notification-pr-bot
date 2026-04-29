@@ -1,66 +1,44 @@
 const Base64 = require("js-base64").Base64;
+const process = require("process");
 
-const { AWS_ECR_URL, closePRs, createPR, getContents, getHeadSha } = require("./github")
+const {
+  AWS_ECR_URL,
+  TARGET_REPO,
+  closePRs,
+  createPR,
+  getContents,
+  getHeadSha,
+  getTerraformVersionChange,
+} = require("./github")
+const { getRepoDefaults } = require("./repo-defaults")
+
+// Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Values are provided via environment variables.
+
+function getInput(name, defaultValue) {
+  const envVar = process.env[name];
+  if (envVar !== undefined && envVar !== "") return envVar;
+  return defaultValue;
+}
+
+function getJsonInput(name, defaultValue) {
+  const raw = getInput(name, null);
+  if (raw === null) return defaultValue;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error(`Failed to parse ${name} as JSON: ${e.message}`);
+    return defaultValue;
+  }
+}
 
 // Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-const PROJECTS = [
-  {
-    repoName: "notification-api",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "API_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-api",
-  },
-  {
-    repoName: "notification-admin",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "ADMIN_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-admin",
-  },
-  {
-    repoName: "notification-document-download-api",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "DOCUMENT_DOWNLOAD_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-document-download-api",
-  },
-  {
-    repoName: "notification-documentation",
-    helmfileOverride: "helmfile/overrides/production.env",
-    helmfileTagKey: "DOCUMENTATION_DOCKER_TAG",
-    ecrUrl: AWS_ECR_URL,
-    ecrName: "notify-documentation",
-  },
-];
-
-const PROJECTS_LAMBDAS = [
-  {
-    repoName: "notification-api",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "api-lambda",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "heartbeat",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "system_status",
-  },
-  {
-    repoName: "notification-lambdas",
-    manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-    ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-    ecrName: "ses_to_sqs_email_callbacks",
-  },
-]
+const repoDefaults = getRepoDefaults(TARGET_REPO, AWS_ECR_URL);
+const TITLE_PREFIX = getInput("TITLE_PREFIX", repoDefaults.titlePrefix);
+const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", repoDefaults.prTemplatePath);
+const PROJECTS = getJsonInput("PROJECTS", repoDefaults.projects);
+const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", repoDefaults.projectsLambdas);
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -100,7 +78,7 @@ function shortSha(fullSha) {
   
         // Patch the helmfile tags
         const helmfileContent = await getContents(
-          "notification-manifests",
+          TARGET_REPO,
           project.helmfileOverride
         );
   
@@ -125,13 +103,13 @@ function shortSha(fullSha) {
         );
   
         const releaseContent = await getContents(
-          "notification-manifests",
+          TARGET_REPO,
           project.manifestFile
         );
   
         const originalFileContents = Base64.decode(releaseContent.content)
         const re = new RegExp(`${project.ecrName}:\\S*`, "g");
-        matches = originalFileContents.match(re);
+        const matches = originalFileContents.match(re);
         project.oldUrl = matches[0]
         project.oldSha = getLambdaSha(project.oldUrl);
         return project;
@@ -152,8 +130,8 @@ function shortSha(fullSha) {
 
 async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   const prTemplate = await getContents(
-    "notification-manifests",
-    ".github/PULL_REQUEST_TEMPLATE.md"
+    TARGET_REPO,
+    PR_TEMPLATE_PATH
   );
   const issueContent = Base64.decode(prTemplate.content);
 
@@ -166,7 +144,7 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   var changesToHelmfile = Object.entries(projectsForFiles).map(async ([helmfileOverride, projectsForFile]) => {
 
     const releaseContent = await getContents(
-      "notification-manifests",
+      TARGET_REPO,
       helmfileOverride
     );
 
@@ -188,7 +166,7 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   var changesToLambdaFiles = Object.entries(lambdaProjectsForFiles).map(async ([manifestFile, projectsForFile]) => {
 
     const releaseContent = await getContents(
-      "notification-manifests",
+      TARGET_REPO,
       manifestFile
     );
 
@@ -209,16 +187,36 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
 
   const helmFilesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
   const lambdaFilesHaveChanged = changesToLambdaFiles.some(({ fileHasChanged }) => fileHasChanged)
+  const extraFileChanges = [];
 
-  if (helmFilesHaveChanged || lambdaFilesHaveChanged) {
+  if (TARGET_REPO === "notification-terraform") {
+    const terraformVersionChange = await getTerraformVersionChange();
+    if (terraformVersionChange && terraformVersionChange.fileHasChanged) {
+      extraFileChanges.push(terraformVersionChange);
+    }
+  }
+
+  const extraFilesHaveChanged = extraFileChanges.some(({ fileHasChanged }) => fileHasChanged)
+
+  if (helmFilesHaveChanged || lambdaFilesHaveChanged || extraFilesHaveChanged) {
     if (closePRsFirst) {
       await closePRs(titlePrefix);
     }
-    await createPR(titlePrefix, projects, projects_lambdas, issueContent, changesToHelmfile, changesToLambdaFiles);
+    await createPR(
+      titlePrefix,
+      projects,
+      projects_lambdas,
+      issueContent,
+      changesToHelmfile,
+      changesToLambdaFiles,
+      extraFileChanges
+    );
+  } else {
+    console.log("No changes detected, skipping PR creation.");
   }
 }
 
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-main(true, "[AUTO-PR]", PROJECTS, PROJECTS_LAMBDAS);
+main(true, TITLE_PREFIX, PROJECTS, PROJECTS_LAMBDAS);
