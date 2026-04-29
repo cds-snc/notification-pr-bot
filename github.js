@@ -227,7 +227,7 @@ async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
 
         const authorName = commit.commit.author ? commit.commit.author.name : "Unknown";
         const message = commit.commit.message.split("\n\n")[0];
-        const safeMessage = message.replace(/\|/g, "\\|");
+        const safeMessage = message.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
         const bullet = `- [${safeMessage}](${commit.html_url}) by ${authorName}`;
 
         return { modules, bullet };
