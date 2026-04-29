@@ -39,6 +39,7 @@ const TITLE_PREFIX = getInput("TITLE_PREFIX", repoDefaults.titlePrefix);
 const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", repoDefaults.prTemplatePath);
 const PROJECTS = getJsonInput("PROJECTS", repoDefaults.projects);
 const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", repoDefaults.projectsLambdas);
+const FORCE_PR = process.env.FORCE_PR === "true";
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -190,7 +191,7 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   const extraFileChanges = [];
 
   if (TARGET_REPO === "notification-terraform") {
-    const terraformVersionChange = await getTerraformVersionChange();
+    const terraformVersionChange = await getTerraformVersionChange(FORCE_PR);
     if (terraformVersionChange && terraformVersionChange.fileHasChanged) {
       extraFileChanges.push(terraformVersionChange);
     }
@@ -198,7 +199,7 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
 
   const extraFilesHaveChanged = extraFileChanges.some(({ fileHasChanged }) => fileHasChanged)
 
-  if (helmFilesHaveChanged || lambdaFilesHaveChanged || extraFilesHaveChanged) {
+  if (helmFilesHaveChanged || lambdaFilesHaveChanged || extraFilesHaveChanged || FORCE_PR) {
     if (closePRsFirst) {
       await closePRs(titlePrefix);
     }
