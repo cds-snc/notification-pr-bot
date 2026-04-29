@@ -55,6 +55,10 @@ async function closePRs(titlePrefix) {
 const GENERATED_SUMMARY_PLACEHOLDER = "<!-- RELEASE_SUMMARY -->";
 
 function injectGeneratedContent(issueContent, logs) {
+  if (TARGET_REPO === "notification-terraform") {
+    return issueContent.replace(GENERATED_SUMMARY_PLACEHOLDER, logs);
+  }
+
   if (issueContent.includes(GENERATED_SUMMARY_PLACEHOLDER)) {
     return issueContent.replace(GENERATED_SUMMARY_PLACEHOLDER, logs);
   }
