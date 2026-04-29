@@ -173,14 +173,6 @@ async function buildLogs(projects, extraFileChanges = []) {
     }
   }
 
-  if (TARGET_REPO === "notification-manifests" && await isNotLatestManifestsVersion()) {
-    logs = `⚠️ **The production version of manifests is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-  }
-
-  if (TARGET_REPO === "notification-terraform" && await isNotLatestTerraformVersion()) {
-    logs = `⚠️ **The production version of the Terraform infrastructure is behind the latest staging version. Consider upgrading to the latest version before merging this pull request.** \n\n ${logs}`;
-  }
-
   return logs;
 }
 
@@ -329,14 +321,27 @@ const getTagRef = async (repo, version) => {
 
 const getLatestTag = async (repo) => {
   const {
-    data: [latestTag],
+    data: tags,
   } = await octokit.rest.repos.listTags({
     owner: GH_CDS,
     repo,
-    per_page: 1,
+    per_page: 50,
   });
 
-  return latestTag.name;
+  // Filter for valid version tags (v1.2.3 or just 1.2.3 format)
+  const versionTags = tags.filter(tag => {
+    const name = tag.name;
+    // Match patterns like v2.27.79, 2.27.79, v1.2.3, 1.2.3
+    return /^v?\d+\.\d+\.\d+/.test(name);
+  });
+
+  if (versionTags.length === 0) {
+    // Fallback to first tag if no valid versions found
+    return tags[0]?.name || null;
+  }
+
+  // Return the first valid tag (GitHub API returns them in reverse chronological order)
+  return versionTags[0].name;
 };
 async function isNotLatestManifestsVersion() {
   const releaseConfig = await getContents(
