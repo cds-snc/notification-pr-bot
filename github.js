@@ -46,6 +46,51 @@ async function closePRs(titlePrefix) {
   }
 }
 
+function replaceSectionBody(template, heading, body) {
+  const lines = template.split("\n");
+  const headingIndex = lines.findIndex((line) => line.trim() === heading);
+
+  if (headingIndex === -1) {
+    return null;
+  }
+
+  let start = headingIndex + 1;
+  while (start < lines.length && lines[start].trim() === "") {
+    start += 1;
+  }
+
+  let end = start;
+  while (end < lines.length && !lines[end].startsWith("## ")) {
+    end += 1;
+  }
+
+  const before = lines.slice(0, headingIndex + 1).join("\n");
+  const after = lines.slice(end).join("\n").replace(/^\n+/, "");
+
+  return `${before}\n\n${body}${after ? `\n\n${after}` : ""}`;
+}
+
+function injectGeneratedContent(issueContent, logs) {
+  const bySection =
+    replaceSectionBody(issueContent, "## Summary", logs) ||
+    replaceSectionBody(issueContent, "## Provide some background on the changes", logs);
+
+  if (bySection) {
+    return bySection;
+  }
+
+  return issueContent
+    .replace(
+      "> What is changing and why? (e.g. security patching, scaling API pods, new feature deployment)",
+      logs
+    )
+    .replace(
+      "> Give details ex. Security patching, content update, more API pods etc",
+      logs
+    )
+    .replace("_TODO: 1-3 sentence description of the changed you're proposing._", logs);
+}
+
 async function createPR(
   titlePrefix,
   projects, projects_lambdas,
@@ -131,9 +176,7 @@ async function createPR(
     title: title,
     head: branchName,
     base: "main",
-    body: issueContent
-      .replace("> Give details ex. Security patching, content update, more API pods etc", logs)
-      .replace("_TODO: 1-3 sentence description of the changed you're proposing._", logs),
+    body: injectGeneratedContent(issueContent, logs),
     draft: true,
   });
   return Promise.all([ref, pr]);
@@ -163,7 +206,13 @@ async function buildLogs(projects, extraFileChanges = []) {
         tfChange.oldVersion,
         tfChange.latestVersion
       );
-      const extraSummary = `NOTIFICATION-TERRAFORM\n\n${commitLog}`;
+      const extraSummary = [
+        `Releasing Terraform infrastructure from \`${tfChange.oldVersion}\` to \`${tfChange.latestVersion}\`.`,
+        "",
+        "### Module changes",
+        "",
+        commitLog,
+      ].join("\n");
       logs = logs ? `${extraSummary}\n\n${logs}` : extraSummary;
     } else {
       const extraSummary = extraFileChanges

@@ -66,7 +66,7 @@ function getRepoDefaults(targetRepo, awsEcrUrl) {
     },
     "notification-terraform": {
       titlePrefix: "[AUTO-PR]",
-      prTemplatePath: "pull_request_template.md",
+      prTemplatePath: ".github/release_pr_template.md",
       projects: [],
       projectsLambdas: [],
     },
