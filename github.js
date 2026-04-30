@@ -205,7 +205,6 @@ function getTerraformModuleFromPath(path) {
 }
 
 async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
-  const allModules = await getTerraformModules();
   const oldTagRef = await getTagRef("notification-terraform", oldVersion);
   const latestTagRef = await getTagRef("notification-terraform", latestVersion);
 
@@ -258,30 +257,22 @@ async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
     }
   }
 
-  const sortedModules = [...new Set([...allModules, ...moduleToCommits.keys()])].sort();
+  const sortedModules = [...moduleToCommits.keys()].sort();
+
+  if (sortedModules.length === 0) {
+    return "_No module-level changes detected in this release._";
+  }
+
   const header = "| Module | Changes |\n| --- | --- |";
   const rows = sortedModules
     .map((moduleName) => {
       const moduleLabel = moduleName === "other" ? "Other" : moduleName;
-      const commits = moduleToCommits.has(moduleName)
-        ? moduleToCommits.get(moduleName).join("<br>")
-        : "_No changes in this release._";
+      const commits = moduleToCommits.get(moduleName).join("<br>");
       return `| ${moduleLabel} | ${commits} |`;
     })
     .join("\n");
 
   return `${header}\n${rows}`;
-}
-
-async function getTerraformModules() {
-  const awsContents = await getContents("notification-terraform", "aws");
-  if (!Array.isArray(awsContents)) {
-    return [];
-  }
-
-  return awsContents
-    .filter((item) => item.type === "dir")
-    .map((item) => item.name);
 }
 
 const getCommitMessages = async (repo, sha) => {
