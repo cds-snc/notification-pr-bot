@@ -60,7 +60,7 @@ function getRepoDefaults(targetRepo, awsEcrUrl) {
   const defaultsByRepo = {
     "notification-manifests": {
       titlePrefix: "[AUTO-PR]",
-      prTemplatePath: ".github/PULL_REQUEST_TEMPLATE.md",
+      prTemplatePath: ".github/release_pr_template.md",
       projects: manifestsProjects,
       projectsLambdas: manifestsLambdas,
     },
