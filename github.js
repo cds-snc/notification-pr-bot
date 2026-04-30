@@ -242,37 +242,87 @@ async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
         const authorName = commit.commit.author ? commit.commit.author.name : "Unknown";
         const message = commit.commit.message.split("\n\n")[0];
         const safeMessage = message.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
-        const bullet = `- [${safeMessage}](${commit.html_url}) by ${authorName}`;
+        const tableBullet = `- [${safeMessage}](${commit.html_url}) by ${authorName}`;
 
-        return { modules, bullet };
+        return {
+          modules,
+          message,
+          url: commit.html_url,
+          authorName,
+          tableBullet,
+        };
       })
     );
 
-    for (const { modules, bullet } of commitEntries) {
+    for (const { modules, tableBullet } of commitEntries) {
       for (const moduleName of modules) {
         const existing = moduleToCommits.get(moduleName) || [];
-        existing.push(bullet);
+        existing.push(tableBullet);
         moduleToCommits.set(moduleName, existing);
       }
     }
+
+    const commitToModules = new Map();
+    for (const { modules, message, url, authorName } of commitEntries) {
+      const key = `${url}|${message}`;
+      const existing = commitToModules.get(key) || {
+        message,
+        url,
+        authorName,
+        modules: new Set(),
+      };
+
+      for (const moduleName of modules) {
+        const moduleLabel = moduleName === "other" ? "Other" : moduleName;
+        existing.modules.add(moduleLabel);
+      }
+
+      commitToModules.set(key, existing);
+    }
+
+    const copyReadyLines = [...commitToModules.values()]
+      .map(({ message, url, authorName, modules }) => {
+        const moduleList = [...modules].sort().join(", ");
+        const prMatch = message.match(/\(#(\d+)\)/);
+        const prNumber = prMatch ? prMatch[1] : null;
+        const cleanMessage = message.replace(/\s*\(#\d+\)$/, "");
+        if (prNumber) {
+          const prUrl = `https://github.com/${GH_CDS}/notification-terraform/pull/${prNumber}`;
+          return `- [#${prNumber}](${prUrl}) ${cleanMessage} — ${authorName} [${moduleList}]`;
+        }
+
+        return `- [commit](${url}) ${cleanMessage} — ${authorName} [${moduleList}]`;
+      })
+      .join("\n");
+
+    const copyReadySection = [
+      "<details>",
+      "<summary>Copy Rendered Summary</summary>",
+      "",
+      copyReadyLines,
+      "</details>",
+    ].join("\n");
+
+    const sortedModules = [...moduleToCommits.keys()].sort();
+
+    if (sortedModules.length === 0) {
+      return "_No module-level changes detected in this release._";
+    }
+
+    const header = "| Module | Changes |\n| --- | --- |";
+    const rows = sortedModules
+      .map((moduleName) => {
+        const moduleLabel = moduleName === "other" ? "Other" : moduleName;
+        const commits = moduleToCommits.get(moduleName).join("<br>");
+        return `| ${moduleLabel} | ${commits} |`;
+      })
+      .join("\n");
+
+    const tableSection = `${header}\n${rows}`;
+    return `${copyReadySection}\n\n${tableSection}`;
   }
 
-  const sortedModules = [...moduleToCommits.keys()].sort();
-
-  if (sortedModules.length === 0) {
-    return "_No module-level changes detected in this release._";
-  }
-
-  const header = "| Module | Changes |\n| --- | --- |";
-  const rows = sortedModules
-    .map((moduleName) => {
-      const moduleLabel = moduleName === "other" ? "Other" : moduleName;
-      const commits = moduleToCommits.get(moduleName).join("<br>");
-      return `| ${moduleLabel} | ${commits} |`;
-    })
-    .join("\n");
-
-  return `${header}\n${rows}`;
+  return "_No module-level changes detected in this release._";
 }
 
 const getCommitMessages = async (repo, sha) => {
