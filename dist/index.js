@@ -52,6 +52,27 @@ async function closePRs(titlePrefix) {
   }
 }
 
+const GENERATED_SUMMARY_PLACEHOLDER = "<!-- RELEASE_SUMMARY -->";
+
+function injectGeneratedContent(issueContent, logs) {
+  // Prefer the shared summary placeholder used by release templates.
+  if (issueContent.includes(GENERATED_SUMMARY_PLACEHOLDER)) {
+    return issueContent.replace(GENERATED_SUMMARY_PLACEHOLDER, logs);
+  }
+
+  // Backward compatibility for legacy templates that predate RELEASE_SUMMARY.
+  return issueContent
+    .replace(
+      "> What is changing and why? (e.g. security patching, scaling API pods, new feature deployment)",
+      logs
+    )
+    .replace(
+      "> Give details ex. Security patching, content update, more API pods etc",
+      logs
+    )
+    .replace("_TODO: 1-3 sentence description of the changed you're proposing._", logs);
+}
+
 async function createPR(
   titlePrefix,
   projects, projects_lambdas,
@@ -137,9 +158,7 @@ async function createPR(
     title: title,
     head: branchName,
     base: "main",
-    body: issueContent
-      .replace("> Give details ex. Security patching, content update, more API pods etc", logs)
-      .replace("_TODO: 1-3 sentence description of the changed you're proposing._", logs),
+    body: injectGeneratedContent(issueContent, logs),
     draft: true,
   });
   return Promise.all([ref, pr]);
@@ -150,17 +169,73 @@ function uniqueByKey(items, key) {
   return [...new Map(items.map(item => [item[key], item])).values()];
 }
 
+function escapeTableCell(content) {
+  return String(content).replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+}
+
+function getCommitSummaryLine(commit, componentLabel) {
+  const prMatch = commit.message.match(/\(#(\d+)\)/);
+  const cleanMessage = commit.message.replace(/\s*\(#\d+\)$/, "");
+
+  if (prMatch) {
+    const prNumber = prMatch[1];
+    const prUrl = `https://github.com/${GH_CDS}/${commit.repoName}/pull/${prNumber}`;
+    return `- [#${prNumber}](${prUrl}) - ${cleanMessage} — ${commit.authorName} [${componentLabel}]`;
+  }
+
+  return `- [commit](${commit.url}) - ${cleanMessage} — ${commit.authorName} [${componentLabel}]`;
+}
+
+function getCommitTableLine(commit) {
+  const safeMessage = escapeTableCell(commit.message);
+  const safeAuthor = escapeTableCell(commit.authorName);
+  return `- [${safeMessage}](${commit.url}) by ${safeAuthor}`;
+}
+
 async function buildLogs(projects, extraFileChanges = []) {
   const uniqueByRepo = uniqueByKey(projects, "repoName");
-  let logs = uniqueByRepo.map(async (project) => {
-    const msgsCommits = await getCommitMessages(project.repoName, project.oldSha);
-    const strCommits = msgsCommits.join("\n");
-    const projectName = project.repoName.toUpperCase();
-    return `${projectName}\n\n${strCommits}`;
-  });
-  
-  logs = await Promise.all(logs);
-  logs = logs.join("\n\n");
+  let logs = "";
+
+  if (uniqueByRepo.length > 0) {
+    const repoCommitGroups = await Promise.all(
+      uniqueByRepo.map(async (project) => {
+        const commits = await getCommitMessages(project.repoName, project.oldSha);
+        return {
+          componentLabel: project.repoName.toUpperCase(),
+          commits,
+        };
+      })
+    );
+
+    const copyReadyLines = repoCommitGroups
+      .flatMap(({ componentLabel, commits }) =>
+        commits.map((commit) => getCommitSummaryLine(commit, componentLabel))
+      )
+      .join("\n");
+
+    const copyReadySection = [
+      "<details>",
+      "<summary>Copy Rendered Summary</summary>",
+      "",
+      "NOTIFICATION-MANIFESTS",
+      "",
+      copyReadyLines,
+      "</details>",
+    ].join("\n");
+
+    const tableHeader = "| Component | Changes |\n| --- | --- |";
+    const tableRows = repoCommitGroups
+      .sort((a, b) => a.componentLabel.localeCompare(b.componentLabel))
+      .map(({ componentLabel, commits }) => {
+        const commitLines = commits.length
+          ? commits.map(getCommitTableLine).join("<br>")
+          : "_No new commits_";
+        return `| ${componentLabel} | ${commitLines} |`;
+      })
+      .join("\n");
+
+    logs = `${copyReadySection}\n\n${tableHeader}\n${tableRows}`;
+  }
 
   if (extraFileChanges.length > 0) {
     const tfChange = extraFileChanges.find(c => c.oldVersion);
@@ -169,7 +244,10 @@ async function buildLogs(projects, extraFileChanges = []) {
         tfChange.oldVersion,
         tfChange.latestVersion
       );
-      const extraSummary = `NOTIFICATION-TERRAFORM\n\n${commitLog}`;
+      const extraSummary = [
+        `Releasing Terraform infrastructure from \`${tfChange.oldVersion}\` to \`${tfChange.latestVersion}\`.`,
+        commitLog,
+      ].join("\n");
       logs = logs ? `${extraSummary}\n\n${logs}` : extraSummary;
     } else {
       const extraSummary = extraFileChanges
@@ -177,6 +255,10 @@ async function buildLogs(projects, extraFileChanges = []) {
         .join("\n");
       logs = logs ? `${extraSummary}\n\n${logs}` : extraSummary;
     }
+  }
+
+  if (!logs) {
+    return "_No component-level changes detected in this release._";
   }
 
   return logs;
@@ -187,8 +269,11 @@ function getTerraformModuleFromPath(path) {
   return match ? match[1] : null;
 }
 
+function isTerraformReleaseCommitMessage(message) {
+  return /^release\s+\d+\.\d+\.\d+\s+\(#\d+\)$/i.test(message.trim());
+}
+
 async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
-  const allModules = await getTerraformModules();
   const oldTagRef = await getTagRef("notification-terraform", oldVersion);
   const latestTagRef = await getTagRef("notification-terraform", latestVersion);
 
@@ -204,9 +289,14 @@ async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
 
   const moduleToCommits = new Map();
 
-  if (comparison.commits && comparison.commits.length > 0) {
+  const relevantCommits = (comparison.commits || []).filter((commit) => {
+    const message = commit.commit.message.split("\n\n")[0];
+    return !isTerraformReleaseCommitMessage(message);
+  });
+
+  if (relevantCommits.length > 0) {
     const commitEntries = await Promise.all(
-      comparison.commits.map(async (commit) => {
+      relevantCommits.map(async (commit) => {
         const { data: commitData } = await octokit.rest.repos.getCommit({
           owner: GH_CDS,
           repo: "notification-terraform",
@@ -226,45 +316,89 @@ async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
         const authorName = commit.commit.author ? commit.commit.author.name : "Unknown";
         const message = commit.commit.message.split("\n\n")[0];
         const safeMessage = message.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
-        const bullet = `- [${safeMessage}](${commit.html_url}) by ${authorName}`;
+        const tableBullet = `- [${safeMessage}](${commit.html_url}) by ${authorName}`;
 
-        return { modules, bullet };
+        return {
+          modules,
+          message,
+          url: commit.html_url,
+          authorName,
+          tableBullet,
+        };
       })
     );
 
-    for (const { modules, bullet } of commitEntries) {
+    for (const { modules, tableBullet } of commitEntries) {
       for (const moduleName of modules) {
         const existing = moduleToCommits.get(moduleName) || [];
-        existing.push(bullet);
+        existing.push(tableBullet);
         moduleToCommits.set(moduleName, existing);
       }
     }
+
+    const commitToModules = new Map();
+    for (const { modules, message, url, authorName } of commitEntries) {
+      const key = `${url}|${message}`;
+      const existing = commitToModules.get(key) || {
+        message,
+        url,
+        authorName,
+        modules: new Set(),
+      };
+
+      for (const moduleName of modules) {
+        const moduleLabel = moduleName === "other" ? "Other" : moduleName;
+        existing.modules.add(moduleLabel);
+      }
+
+      commitToModules.set(key, existing);
+    }
+
+    const copyReadyLines = [...commitToModules.values()]
+      .map(({ message, url, authorName, modules }) => {
+        const moduleList = [...modules].sort().join(", ");
+        const prMatch = message.match(/\(#(\d+)\)/);
+        const prNumber = prMatch ? prMatch[1] : null;
+        const cleanMessage = message.replace(/\s*\(#\d+\)$/, "");
+        if (prNumber) {
+          const prUrl = `https://github.com/${GH_CDS}/notification-terraform/pull/${prNumber}`;
+          return `- [#${prNumber}](${prUrl}) - ${cleanMessage} — ${authorName} [${moduleList}]`;
+        }
+
+        return `- [commit](${url}) - ${cleanMessage} — ${authorName} [${moduleList}]`;
+      })
+      .join("\n");
+
+    const copyReadySection = [
+      "<details>",
+      "<summary>Copy Rendered Summary</summary>",
+      "",
+      "NOTIFICATION-TERRAFORM",
+      "",
+      copyReadyLines,
+      "</details>",
+    ].join("\n");
+
+    const sortedModules = [...moduleToCommits.keys()].sort();
+
+    if (sortedModules.length === 0) {
+      return "_No module-level changes detected in this release._";
+    }
+
+    const header = "| Module | Changes |\n| --- | --- |";
+    const rows = sortedModules
+      .map((moduleName) => {
+        const moduleLabel = moduleName === "other" ? "Other" : moduleName;
+        const commits = moduleToCommits.get(moduleName).join("<br>");
+        return `| ${moduleLabel} | ${commits} |`;
+      })
+      .join("\n");
+
+    const tableSection = `${header}\n${rows}`;
+    return `${copyReadySection}\n\n${tableSection}`;
   }
 
-  const sortedModules = [...new Set([...allModules, ...moduleToCommits.keys()])].sort();
-  const header = "| Module | Changes |\n| --- | --- |";
-  const rows = sortedModules
-    .map((moduleName) => {
-      const moduleLabel = moduleName === "other" ? "Other" : moduleName;
-      const commits = moduleToCommits.has(moduleName)
-        ? moduleToCommits.get(moduleName).join("<br>")
-        : "_No changes in this release._";
-      return `| ${moduleLabel} | ${commits} |`;
-    })
-    .join("\n");
-
-  return `${header}\n${rows}`;
-}
-
-async function getTerraformModules() {
-  const awsContents = await getContents("notification-terraform", "aws");
-  if (!Array.isArray(awsContents)) {
-    return [];
-  }
-
-  return awsContents
-    .filter((item) => item.type === "dir")
-    .map((item) => item.name);
+  return "_No module-level changes detected in this release._";
 }
 
 const getCommitMessages = async (repo, sha) => {
@@ -284,11 +418,12 @@ const getCommitMessages = async (repo, sha) => {
 
   return commits
     .slice(0, index)
-    .map(
-      (c) =>
-        `- [${c.commit.message.split("\n\n")[0]}](${c.html_url}) by ${c.commit.author.name
-        }`
-    );
+    .map((c) => ({
+      repoName: repo,
+      message: c.commit.message.split("\n\n")[0],
+      url: c.html_url,
+      authorName: c.commit.author ? c.commit.author.name : "Unknown",
+    }));
 };
 
 async function getContents(repo, path) {
@@ -349,6 +484,7 @@ const getLatestTag = async (repo) => {
   // Return the first valid tag (GitHub API returns them in reverse chronological order)
   return versionTags[0].name;
 };
+
 async function isNotLatestManifestsVersion() {
   const releaseConfig = await getContents(
     "notification-manifests",
@@ -398,10 +534,14 @@ module.exports = {
   GH_CDS,
   AWS_ECR_URL,
   TARGET_REPO,
+  buildLogs,
   closePRs,
   createPR,
   getContents,
   getHeadSha,
+  injectGeneratedContent,
+  isNotLatestManifestsVersion,
+  isNotLatestTerraformVersion,
   getTerraformVersionChange,
 }
 
@@ -7189,13 +7329,13 @@ function getRepoDefaults(targetRepo, awsEcrUrl) {
   const defaultsByRepo = {
     "notification-manifests": {
       titlePrefix: "[AUTO-PR]",
-      prTemplatePath: ".github/PULL_REQUEST_TEMPLATE.md",
+      prTemplatePath: ".github/release_pr_template.md",
       projects: manifestsProjects,
       projectsLambdas: manifestsLambdas,
     },
     "notification-terraform": {
       titlePrefix: "[AUTO-PR]",
-      prTemplatePath: "pull_request_template.md",
+      prTemplatePath: ".github/release_pr_template.md",
       projects: [],
       projectsLambdas: [],
     },
