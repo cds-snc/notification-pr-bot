@@ -53,10 +53,6 @@ function injectGeneratedContent(issueContent, logs) {
     return issueContent.replace(GENERATED_SUMMARY_PLACEHOLDER, logs);
   }
 
-  if (issueContent.includes(GENERATED_SUMMARY_PLACEHOLDER)) {
-    return issueContent.replace(GENERATED_SUMMARY_PLACEHOLDER, logs);
-  }
-
   return issueContent
     .replace(
       "> What is changing and why? (e.g. security patching, scaling API pods, new feature deployment)",
@@ -187,7 +183,7 @@ async function buildLogs(projects, extraFileChanges = []) {
       const extraSummary = [
         `Releasing Terraform infrastructure from \`${tfChange.oldVersion}\` to \`${tfChange.latestVersion}\`.`,
         "",
-        "### Module changes",
+        "NOTIFICATION-TERRAFORM",
         "",
         commitLog,
       ].join("\n");
@@ -371,6 +367,22 @@ const getLatestTag = async (repo) => {
   return versionTags[0].name;
 };
 
+async function isNotLatestManifestsVersion() {
+  const releaseConfig = await getContents(
+    "notification-manifests",
+    "VERSION"
+  );
+
+  const prodVersion = Base64.decode(releaseConfig.content);
+  const latestVersion = await getLatestTag("notification-manifests");
+  return prodVersion != latestVersion;
+}
+
+async function isNotLatestTerraformVersion() {
+  const terraformVersionChange = await getTerraformVersionChange();
+  return terraformVersionChange && terraformVersionChange.fileHasChanged;
+}
+
 async function getTerraformVersionChange(force = false) {
   const prodWorkflow = await getContents(
     "notification-terraform",
@@ -404,9 +416,13 @@ module.exports = {
   GH_CDS,
   AWS_ECR_URL,
   TARGET_REPO,
+  buildLogs,
   closePRs,
   createPR,
   getContents,
   getHeadSha,
+  injectGeneratedContent,
+  isNotLatestManifestsVersion,
+  isNotLatestTerraformVersion,
   getTerraformVersionChange,
 }
