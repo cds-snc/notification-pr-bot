@@ -188,9 +188,6 @@ async function buildLogs(projects, extraFileChanges = []) {
       );
       const extraSummary = [
         `Releasing Terraform infrastructure from \`${tfChange.oldVersion}\` to \`${tfChange.latestVersion}\`.`,
-        "",
-        "NOTIFICATION-TERRAFORM",
-        "",
         commitLog,
       ].join("\n");
       logs = logs ? `${extraSummary}\n\n${logs}` : extraSummary;
@@ -294,16 +291,18 @@ async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
         const cleanMessage = message.replace(/\s*\(#\d+\)$/, "");
         if (prNumber) {
           const prUrl = `https://github.com/${GH_CDS}/notification-terraform/pull/${prNumber}`;
-          return `- [#${prNumber}](${prUrl}) ${cleanMessage} — ${authorName} [${moduleList}]`;
+          return `- [#${prNumber}](${prUrl}) - ${cleanMessage} — ${authorName} [${moduleList}]`;
         }
 
-        return `- [commit](${url}) ${cleanMessage} — ${authorName} [${moduleList}]`;
+        return `- [commit](${url}) - ${cleanMessage} — ${authorName} [${moduleList}]`;
       })
       .join("\n");
 
     const copyReadySection = [
       "<details>",
       "<summary>Copy Rendered Summary</summary>",
+      "",
+      "NOTIFICATION-TERRAFORM",
       "",
       copyReadyLines,
       "</details>",
