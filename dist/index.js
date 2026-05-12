@@ -270,7 +270,9 @@ function getTerraformModuleFromPath(path) {
 }
 
 function isTerraformReleaseCommitMessage(message) {
-  return /^release\s+\d+\.\d+\.\d+\s+\(#\d+\)$/i.test(message.trim());
+  const isRelease = /^release\s+\d+\.\d+\.\d+\s+\(#\d+\)$/i.test(message.trim());
+  const isUpdateTracker = /^Update infrastructure version to\s+\d+\.\d+\.\d+.*$/i.test(message.trim());
+  return isRelease || isUpdateTracker;
 }
 
 async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
