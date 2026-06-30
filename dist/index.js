@@ -75,17 +75,15 @@ function injectGeneratedContent(issueContent, logs) {
 
 async function createPR(
   titlePrefix,
-  projects, projects_lambdas,
+  projects,
   issueContent,
-  changesToHelmfile, changesToLambdaFiles,
+  changesToHelmfile,
   extraFileChanges,
-
 ) {
   const branchName = `release-${new Date().getTime()}`;
   const targetRepoSha = await getHeadSha(TARGET_REPO);
-  // pass in the projects and projects_lambdas so that the changes for all repos
-  // will be listed in the PR
-  const logs = await buildLogs([...projects, ...projects_lambdas], extraFileChanges);
+  // pass in the projects so that the changes for all repos will be listed in the PR
+  const logs = await buildLogs(projects, extraFileChanges);
 
   const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
@@ -95,7 +93,6 @@ async function createPR(
   });
 
   const changedHelmfileUpdates = changesToHelmfile.filter(({ fileHasChanged }) => fileHasChanged);
-  const changedLambdaFileUpdates = changesToLambdaFiles.filter(({ fileHasChanged }) => fileHasChanged);
 
   const helmManifestUpdates = projects
     .map((project) => {
@@ -111,24 +108,6 @@ async function createPR(
       sha: releaseContent.sha,
       path: helmfileOverride,
       message: `Updated manifests to ${helmManifestUpdates}`,
-      content: newReleaseContentBlob,
-    })
-  }
-
-  const lambdaManifestUpdates = projects_lambdas
-    .map((project) => {
-      return `${project.repoName}:${project.shortSha}`;
-    })
-    .join(" and ");
-
-  for (const { manifestFile, releaseContent, newReleaseContentBlob } of changedLambdaFileUpdates) {
-    await octokit.rest.repos.createOrUpdateFileContents({
-      owner: GH_CDS,
-      repo: TARGET_REPO,
-      branch: branchName,
-      sha: releaseContent.sha,
-      path: manifestFile,
-      message: `Updated manifests to ${lambdaManifestUpdates}`,
       content: newReleaseContentBlob,
     })
   }
@@ -7504,7 +7483,6 @@ const repoDefaults = getRepoDefaults(TARGET_REPO, AWS_ECR_URL);
 const TITLE_PREFIX = getInput("TITLE_PREFIX", repoDefaults.titlePrefix);
 const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", repoDefaults.prTemplatePath);
 const PROJECTS = getJsonInput("PROJECTS", repoDefaults.projects);
-const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", repoDefaults.projectsLambdas);
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -7525,10 +7503,6 @@ function shortSha(fullSha) {
     tag = tag.replaceAll("\"","");
     return tag;
   
-  }
-  
-  function getLambdaSha(imageName) {
-    return imageName.split(":").slice(-1)[0];
   }
   
   async function hydrateWithSHAs(projects) {
@@ -7556,45 +7530,10 @@ function shortSha(fullSha) {
       })
     );
   }
-  
-  async function hydrateLambdasWithSHAs(projects) {
-    return await Promise.all(
-      projects.map(async (project) => {
-        project.headSha = await getHeadSha(project.repoName);
-        project.shortSha = shortSha(project.headSha)
-        project.headUrl = getLatestImageUrl(
-          projects,
-          project.ecrName,
-          project.headSha
-        );
-  
-        const releaseContent = await getContents(
-          TARGET_REPO,
-          project.manifestFile
-        );
-  
-        const originalFileContents = Base64.decode(releaseContent.content)
-        const re = new RegExp(`${project.ecrName}:\\S*`, "g");
-        const matches = originalFileContents.match(re);
-        project.oldUrl = matches[0]
-        project.oldSha = getLambdaSha(project.oldUrl);
-        return project;
-      })
-    );
-  }
-  
-  function updateHelmfileSha(content,project) {
-    let re = new RegExp(String.raw`${project.helmfileTagKey}: "(.*?)"`, "g");
-    return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
-  }
-  
-  function updateLambdaSha(content, project) {
-    return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
-  }
 
 // HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
+async function main(closePRsFirst, titlePrefix, projects) {
   const prTemplate = await getContents(
     TARGET_REPO,
     PR_TEMPLATE_PATH
@@ -7602,7 +7541,6 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   const issueContent = Base64.decode(prTemplate.content);
 
   await hydrateWithSHAs(projects);
-  await hydrateLambdasWithSHAs(projects_lambdas);
 
   const reducer = (previous, project) => ({ ...previous, [project.helmfileOverride]: (previous[project.helmfileOverride] || []).concat(project) })
   const projectsForFiles = projects.reduce(reducer, {})
@@ -7626,33 +7564,9 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
     return { helmfileOverride, newReleaseContentBlob, releaseContent, fileHasChanged }
   })
 
-  const lambdaReducer = (previous, project) => ({ ...previous, [project.manifestFile]: (previous[project.manifestFile] || []).concat(project) })
-  const lambdaProjectsForFiles = projects_lambdas.reduce(lambdaReducer, {})
-
-  var changesToLambdaFiles = Object.entries(lambdaProjectsForFiles).map(async ([manifestFile, projectsForFile]) => {
-
-    const releaseContent = await getContents(
-      TARGET_REPO,
-      manifestFile
-    );
-
-    var fileContents = Base64.decode(releaseContent.content)
-    projectsForFile.forEach((project) => {
-      fileContents = updateLambdaSha(fileContents, project)
-    })
-
-    const newReleaseContentBlob = Base64.encode(fileContents);
-    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
-
-    return { manifestFile, newReleaseContentBlob, releaseContent, fileHasChanged }
-  })
-
- 
   changesToHelmfile = await Promise.all(changesToHelmfile)
-  changesToLambdaFiles = await Promise.all(changesToLambdaFiles)
 
   const helmFilesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
-  const lambdaFilesHaveChanged = changesToLambdaFiles.some(({ fileHasChanged }) => fileHasChanged)
   const extraFileChanges = [];
 
   if (TARGET_REPO === "notification-terraform") {
@@ -7664,17 +7578,15 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
 
   const extraFilesHaveChanged = extraFileChanges.some(({ fileHasChanged }) => fileHasChanged)
 
-  if (helmFilesHaveChanged || lambdaFilesHaveChanged || extraFilesHaveChanged) {
+  if (helmFilesHaveChanged || extraFilesHaveChanged) {
     if (closePRsFirst) {
       await closePRs(titlePrefix);
     }
     await createPR(
       titlePrefix,
       projects,
-      projects_lambdas,
       issueContent,
       changesToHelmfile,
-      changesToLambdaFiles,
       extraFileChanges
     );
   } else {
@@ -7685,7 +7597,7 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-main(true, TITLE_PREFIX, PROJECTS, PROJECTS_LAMBDAS);
+main(true, TITLE_PREFIX, PROJECTS);
 
 })();
 
