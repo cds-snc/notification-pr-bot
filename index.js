@@ -86,6 +86,11 @@ function shortSha(fullSha) {
     );
   }
 
+  function updateHelmfileSha(content,project) {
+    let re = new RegExp(String.raw`${project.helmfileTagKey}: "(.*?)"`, "g");
+    return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
+  }
+
 // HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 async function main(closePRsFirst, titlePrefix, projects) {
