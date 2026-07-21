@@ -146,17 +146,17 @@ function escapeTableCell(content) {
   return String(content).replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
 }
 
-function getCommitSummaryLine(commit, componentLabel) {
+function getCommitSummaryLine(commit) {
   const prMatch = commit.message.match(/\(#(\d+)\)/);
   const cleanMessage = commit.message.replace(/\s*\(#\d+\)$/, "");
 
   if (prMatch) {
     const prNumber = prMatch[1];
     const prUrl = `https://github.com/${GH_CDS}/${commit.repoName}/pull/${prNumber}`;
-    return `- [#${prNumber}](${prUrl}) - ${cleanMessage} — ${commit.authorName} [${componentLabel}]`;
+    return `- [#${prNumber}](${prUrl}) - ${cleanMessage} — ${commit.authorName}`;
   }
 
-  return `- [commit](${commit.url}) - ${cleanMessage} — ${commit.authorName} [${componentLabel}]`;
+  return `- [commit](${commit.url}) - ${cleanMessage} — ${commit.authorName}`;
 }
 
 function getCommitTableLine(commit) {
@@ -181,16 +181,18 @@ async function buildLogs(projects, extraFileChanges = []) {
     );
 
     const copyReadyLines = repoCommitGroups
-      .flatMap(({ componentLabel, commits }) =>
-        commits.map((commit) => getCommitSummaryLine(commit, componentLabel))
-      )
-      .join("\n");
+      .sort((a, b) => a.componentLabel.localeCompare(b.componentLabel))
+      .map(({ componentLabel, commits }) => {
+        const commitLines = commits
+          .map((commit) => getCommitSummaryLine(commit))
+          .join("\n");
+        return `${componentLabel}\n\n${commitLines}`;
+      })
+      .join("\n\n");
 
     const copyReadySection = [
       "<details>",
       "<summary>Copy Rendered Summary</summary>",
-      "",
-      "NOTIFICATION-MANIFESTS",
       "",
       copyReadyLines,
       "</details>",
