@@ -79,11 +79,12 @@ async function createPR(
   issueContent,
   changesToHelmfile,
   extraFileChanges,
+  releaseLogProjects = projects,
 ) {
   const branchName = `release-${new Date().getTime()}`;
   const targetRepoSha = await getHeadSha(TARGET_REPO);
   // pass in the projects so that the changes for all repos will be listed in the PR
-  const logs = await buildLogs(projects, extraFileChanges);
+  const logs = await buildLogs(releaseLogProjects, extraFileChanges);
 
   const ref = await octokit.rest.git.createRef({
     owner: GH_CDS,
@@ -385,6 +386,16 @@ async function getTerraformModuleCommitSummary(oldVersion, latestVersion) {
 }
 
 const getCommitMessages = async (repo, sha) => {
+  let shaRef = sha;
+  if (sha && !/^[0-9a-f]{7,40}$/i.test(sha)) {
+    const { data: commit } = await octokit.rest.repos.getCommit({
+      owner: GH_CDS,
+      repo,
+      ref: sha,
+    });
+    shaRef = commit.sha;
+  }
+
   const { data: commits } = await octokit.rest.repos.listCommits({
     owner: GH_CDS,
     repo,
@@ -392,8 +403,8 @@ const getCommitMessages = async (repo, sha) => {
   });
 
   let index = 0;
-  for (let i = 0; i < 50; i++) {
-    if (commits[i].sha.startsWith(sha)) {
+  for (let i = 0; i < commits.length; i++) {
+    if (commits[i].sha.startsWith(shaRef)) {
       index = i;
       break;
     }
@@ -7586,6 +7597,23 @@ async function main(closePRsFirst, titlePrefix, projects) {
   const extraFilesHaveChanged = extraFileChanges.some(({ fileHasChanged }) => fileHasChanged)
 
   if (helmFilesHaveChanged || extraFilesHaveChanged) {
+    const releaseLogProjects = [...projects];
+
+    if (
+      TARGET_REPO === "notification-manifests" &&
+      !releaseLogProjects.some((project) => project.repoName === TARGET_REPO)
+    ) {
+      const versionFile = await getContents(TARGET_REPO, "VERSION");
+      const currentVersion = Base64.decode(versionFile.content).trim();
+
+      if (currentVersion) {
+        releaseLogProjects.push({
+          repoName: TARGET_REPO,
+          oldSha: currentVersion,
+        });
+      }
+    }
+
     if (closePRsFirst) {
       await closePRs(titlePrefix);
     }
@@ -7594,7 +7622,8 @@ async function main(closePRsFirst, titlePrefix, projects) {
       projects,
       issueContent,
       changesToHelmfile,
-      extraFileChanges
+      extraFileChanges,
+      releaseLogProjects
     );
   } else {
     console.log("No changes detected, skipping PR creation.");

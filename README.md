@@ -9,6 +9,13 @@ and it includes built-in defaults for
 Set `target_repo` and the bot applies the matching defaults for title prefix,
 template path, and image update config.
 
+When targeting `notification-manifests`, generated release summaries include
+both tracked component repos and direct `notification-manifests` commits since
+the currently deployed `VERSION` tag.
+
+This repository provides the bot/action logic. Triggering when to run the bot
+is configured in the consuming repository workflows.
+
 ## Environment variables
 
 | Variable | Default | Description |
