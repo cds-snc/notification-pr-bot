@@ -11,7 +11,7 @@ template path, and image update config.
 
 When targeting `notification-manifests`, generated release summaries include
 both tracked component repos and direct `notification-manifests` commits since
-the currently deployed `VERSION` tag.
+the currently deployed `VERSION` ref (tag or commit SHA).
 
 This repository provides the bot/action logic. Triggering when to run the bot
 is configured in the consuming repository workflows.
