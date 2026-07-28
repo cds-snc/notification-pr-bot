@@ -180,8 +180,11 @@ async function buildLogs(projects, extraFileChanges = []) {
       })
     );
 
-    const copyReadyLines = repoCommitGroups
-      .sort((a, b) => a.componentLabel.localeCompare(b.componentLabel))
+    const sortedRepoCommitGroups = repoCommitGroups
+      .sort((a, b) => a.componentLabel.localeCompare(b.componentLabel));
+
+    const copyReadyLines = sortedRepoCommitGroups
+      .filter(({ commits }) => commits.length > 0)
       .map(({ componentLabel, commits }) => {
         const commitLines = commits
           .map((commit) => getCommitSummaryLine(commit))
@@ -190,17 +193,18 @@ async function buildLogs(projects, extraFileChanges = []) {
       })
       .join("\n\n");
 
-    const copyReadySection = [
-      "<details>",
-      "<summary>Copy Rendered Summary</summary>",
-      "",
-      copyReadyLines,
-      "</details>",
-    ].join("\n");
+    const copyReadySection = copyReadyLines.length > 0
+      ? [
+          "<details>",
+          "<summary>Copy Rendered Summary</summary>",
+          "",
+          copyReadyLines,
+          "</details>",
+        ].join("\n")
+      : null;
 
     const tableHeader = "| Component | Changes |\n| --- | --- |";
-    const tableRows = repoCommitGroups
-      .sort((a, b) => a.componentLabel.localeCompare(b.componentLabel))
+    const tableRows = sortedRepoCommitGroups
       .map(({ componentLabel, commits }) => {
         const commitLines = commits.length
           ? commits.map(getCommitTableLine).join("<br>")
@@ -209,7 +213,9 @@ async function buildLogs(projects, extraFileChanges = []) {
       })
       .join("\n");
 
-    logs = `${copyReadySection}\n\n${tableHeader}\n${tableRows}`;
+    logs = copyReadySection
+      ? `${copyReadySection}\n\n${tableHeader}\n${tableRows}`
+      : `${tableHeader}\n${tableRows}`;
   }
 
   if (extraFileChanges.length > 0) {
@@ -386,7 +392,7 @@ const getCommitMessages = async (repo, sha) => {
   });
 
   let index = 0;
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < commits.length; i++) {
     if (commits[i].sha.startsWith(sha)) {
       index = i;
       break;
