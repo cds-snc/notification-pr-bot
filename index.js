@@ -139,6 +139,23 @@ async function main(closePRsFirst, titlePrefix, projects) {
   const extraFilesHaveChanged = extraFileChanges.some(({ fileHasChanged }) => fileHasChanged)
 
   if (helmFilesHaveChanged || extraFilesHaveChanged) {
+    const releaseLogProjects = [...projects];
+
+    if (
+      TARGET_REPO === "notification-manifests" &&
+      !releaseLogProjects.some((project) => project.repoName === TARGET_REPO)
+    ) {
+      const versionFile = await getContents(TARGET_REPO, "VERSION");
+      const currentVersion = Base64.decode(versionFile.content).trim();
+
+      if (currentVersion) {
+        releaseLogProjects.push({
+          repoName: TARGET_REPO,
+          oldSha: currentVersion,
+        });
+      }
+    }
+
     if (closePRsFirst) {
       await closePRs(titlePrefix);
     }
@@ -147,7 +164,8 @@ async function main(closePRsFirst, titlePrefix, projects) {
       projects,
       issueContent,
       changesToHelmfile,
-      extraFileChanges
+      extraFileChanges,
+      releaseLogProjects
     );
   } else {
     console.log("No changes detected, skipping PR creation.");
