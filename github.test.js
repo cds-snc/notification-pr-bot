@@ -59,17 +59,17 @@ beforeEach(() => {
 describe("buildLogs – empty repository headers", () => {
   test("omits header for a repo with no new commits when another repo has commits", async () => {
     // notification-admin: oldSha is the first (only) commit → slice(0,0) = no new commits
-    setupListCommits([makeApiCommit("oldsha_admin", "Baseline", "Someone")]);
+    setupListCommits([makeApiCommit("aaaaaaa", "Baseline", "Someone")]);
 
     // notification-api: one new commit before oldSha
     setupListCommits([
       makeApiCommit("abc123", "Added bounce rate suspension (#2951)", "Jumana B"),
-      makeApiCommit("oldsha_api", "Old commit", "Someone"),
+      makeApiCommit("bbbbbbb", "Old commit", "Someone"),
     ]);
 
     const projects = [
-      { repoName: "notification-admin", oldSha: "oldsha_admin" },
-      { repoName: "notification-api", oldSha: "oldsha_api" },
+      { repoName: "notification-admin", oldSha: "aaaaaaa" },
+      { repoName: "notification-api", oldSha: "bbbbbbb" },
     ];
 
     const result = await buildLogs(projects);
@@ -86,12 +86,12 @@ describe("buildLogs – empty repository headers", () => {
 
   test("renders no copy-ready section headers when all repos have no new commits", async () => {
     // Both repos: oldSha is the first commit → no new commits.
-    setupListCommits([makeApiCommit("sha1", "Baseline admin", "Alice")]);
-    setupListCommits([makeApiCommit("sha2", "Baseline download", "Bob")]);
+    setupListCommits([makeApiCommit("8888888", "Baseline admin", "Alice")]);
+    setupListCommits([makeApiCommit("9999999", "Baseline download", "Bob")]);
 
     const projects = [
-      { repoName: "notification-admin", oldSha: "sha1" },
-      { repoName: "notification-document-download-api", oldSha: "sha2" },
+      { repoName: "notification-admin", oldSha: "8888888" },
+      { repoName: "notification-document-download-api", oldSha: "9999999" },
     ];
 
     const result = await buildLogs(projects);
@@ -111,11 +111,11 @@ describe("buildLogs – empty repository headers", () => {
 
   test("renders repo headers for repos that do have commits", async () => {
     setupListCommits([
-      makeApiCommit("sha_new", "New feature (#99)", "Alice"),
-      makeApiCommit("sha_old", "Baseline commit", "Bob"),
+      makeApiCommit("ccccccc", "New feature (#99)", "Alice"),
+      makeApiCommit("ddddddd", "Baseline commit", "Bob"),
     ]);
 
-    const projects = [{ repoName: "notification-api", oldSha: "sha_old" }];
+    const projects = [{ repoName: "notification-api", oldSha: "ddddddd" }];
 
     const result = await buildLogs(projects);
 
@@ -127,17 +127,17 @@ describe("buildLogs – empty repository headers", () => {
   test("repos with entries are sorted alphabetically", async () => {
     // notification-utils has a commit, notification-api has a commit.
     setupListCommits([
-      makeApiCommit("sha2_new", "Utils fix (#7)", "Carol"),
-      makeApiCommit("sha2_old", "Old utils", "Carol"),
+      makeApiCommit("eeeeeee", "Utils fix (#7)", "Carol"),
+      makeApiCommit("fffffff", "Old utils", "Carol"),
     ]);
     setupListCommits([
-      makeApiCommit("sha1_new", "API feat (#3)", "Dave"),
-      makeApiCommit("sha1_old", "Old api", "Dave"),
+      makeApiCommit("1111111", "API feat (#3)", "Dave"),
+      makeApiCommit("2222222", "Old api", "Dave"),
     ]);
 
     const projects = [
-      { repoName: "notification-utils", oldSha: "sha2_old" },
-      { repoName: "notification-api", oldSha: "sha1_old" },
+      { repoName: "notification-utils", oldSha: "fffffff" },
+      { repoName: "notification-api", oldSha: "2222222" },
     ];
 
     const result = await buildLogs(projects);
@@ -149,5 +149,59 @@ describe("buildLogs – empty repository headers", () => {
     expect(utilsIdx).toBeGreaterThanOrEqual(0);
     // API should appear before UTILS in alphabetical order.
     expect(apiIdx).toBeLessThan(utilsIdx);
+  });
+
+  test("includes merged PR links for merge-commit messages", async () => {
+    setupListCommits([
+      makeApiCommit(
+        "3333333",
+        "Merge pull request #5040 from cds-snc/include-manifest-pr\n\nKeep direct manifest merges in release notes",
+        "Example Dev"
+      ),
+      makeApiCommit("4444444", "Older commit", "Someone"),
+    ]);
+
+    const projects = [
+      { repoName: "notification-manifests", oldSha: "4444444" },
+    ];
+
+    const result = await buildLogs(projects);
+
+    expect(result).toContain("[#5040](https://github.com/cds-snc/notification-manifests/pull/5040)");
+    expect(result).toContain("Keep direct manifest merges in release notes");
+  });
+
+  test("filters automated notification-manifests release bump commits", async () => {
+    setupListCommits([
+      makeApiCommit("5555555", "New release: v2.30.9 -> v2.30.14", "Notify PR Bot"),
+      makeApiCommit("6666666", "Fix docs typo (#5040)", "Example Dev"),
+      makeApiCommit("7777777", "Older commit", "Someone"),
+    ]);
+
+    const projects = [
+      { repoName: "notification-manifests", oldSha: "7777777" },
+    ];
+
+    const result = await buildLogs(projects);
+
+    expect(result).not.toContain("New release: v2.30.9 -> v2.30.14");
+    expect(result).toContain("[#5040](https://github.com/cds-snc/notification-manifests/pull/5040)");
+  });
+
+  test("filters all notification-pr-bot commits from notification-manifests", async () => {
+    setupListCommits([
+      makeApiCommit("8888888", "Update API docker image tag to 98c74ea", "notify-pr-bot[bot]"),
+      makeApiCommit("9999999", "Fix docs typo (#5040)", "Example Dev"),
+      makeApiCommit("aaaaaaa", "Older commit", "Someone"),
+    ]);
+
+    const projects = [
+      { repoName: "notification-manifests", oldSha: "aaaaaaa" },
+    ];
+
+    const result = await buildLogs(projects);
+
+    expect(result).not.toContain("Update API docker image tag to 98c74ea");
+    expect(result).toContain("[#5040](https://github.com/cds-snc/notification-manifests/pull/5040)");
   });
 });
