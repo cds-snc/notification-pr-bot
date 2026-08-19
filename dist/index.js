@@ -219,9 +219,11 @@ function isManifestsReleaseBumpCommit(commit) {
 }
 
 function isNotificationPrBotCommit(commit) {
+  const author = String(commit.authorLogin || commit.authorName || "").toLowerCase();
+
   return (
     commit.repoName === "notification-manifests" &&
-    ["notify-pr-bot[bot]", "Notify PR Bot"].includes(commit.authorName)
+    ["notify-pr-bot[bot]", "notify-pr-bot", "notify pr bot"].includes(author)
   );
 }
 
@@ -482,6 +484,7 @@ const getCommitMessages = async (repo, sha) => {
       prNumber: getPullRequestNumberFromMessage(c.commit.message),
       url: c.html_url,
       authorName: c.commit.author ? c.commit.author.name : "Unknown",
+      authorLogin: c.author ? c.author.login : null,
     }));
 };
 
