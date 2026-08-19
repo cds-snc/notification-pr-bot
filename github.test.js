@@ -32,10 +32,11 @@ const { buildLogs } = require("./github");
 /**
  * Build a fake GitHub commit object as returned by the Octokit REST API.
  */
-function makeApiCommit(sha, message, authorName = "Test Author") {
+function makeApiCommit(sha, message, authorName = "Test Author", authorLogin = null) {
   return {
     sha,
     commit: { message, author: { name: authorName } },
+    author: authorLogin ? { login: authorLogin } : null,
     html_url: `https://github.com/cds-snc/test-repo/commit/${sha}`,
   };
 }
@@ -202,6 +203,28 @@ describe("buildLogs – empty repository headers", () => {
     const result = await buildLogs(projects);
 
     expect(result).not.toContain("Update API docker image tag to 98c74ea");
+    expect(result).toContain("[#5040](https://github.com/cds-snc/notification-manifests/pull/5040)");
+  });
+
+  test("filters notification-pr-bot commits using the GitHub author login", async () => {
+    setupListCommits([
+      makeApiCommit(
+        "bbbbbbb",
+        "Updated manifests to notification-api:1234567",
+        "GitHub Actions",
+        "notify-pr-bot[bot]"
+      ),
+      makeApiCommit("ccccccc", "Fix docs typo (#5040)", "Example Dev"),
+      makeApiCommit("ddddddd", "Older commit", "Someone"),
+    ]);
+
+    const projects = [
+      { repoName: "notification-manifests", oldSha: "ddddddd" },
+    ];
+
+    const result = await buildLogs(projects);
+
+    expect(result).not.toContain("Updated manifests to notification-api:1234567");
     expect(result).toContain("[#5040](https://github.com/cds-snc/notification-manifests/pull/5040)");
   });
 });
