@@ -149,10 +149,10 @@ function escapeTableCell(content) {
 
 function getCommitSummaryLine(commit) {
   const prMatch = commit.message.match(/\(#(\d+)\)/);
+  const prNumber = commit.prNumber || (prMatch ? prMatch[1] : null);
   const cleanMessage = commit.message.replace(/\s*\(#\d+\)$/, "");
 
-  if (prMatch) {
-    const prNumber = prMatch[1];
+  if (prNumber) {
     const prUrl = `https://github.com/${GH_CDS}/${commit.repoName}/pull/${prNumber}`;
     return `- [#${prNumber}](${prUrl}) - ${cleanMessage} — ${commit.authorName}`;
   }
@@ -166,6 +166,59 @@ function getCommitTableLine(commit) {
   return `- [${safeMessage}](${commit.url}) by ${safeAuthor}`;
 }
 
+function getPullRequestNumberFromMessage(message) {
+  if (!message) {
+    return null;
+  }
+
+  const squashOrRebaseMatch = message.match(/\(#(\d+)\)/);
+  if (squashOrRebaseMatch) {
+    return squashOrRebaseMatch[1];
+  }
+
+  const mergeCommitMatch = message.match(/^Merge pull request #(\d+)\b/m);
+  if (mergeCommitMatch) {
+    return mergeCommitMatch[1];
+  }
+
+  return null;
+}
+
+function getCommitMessageSummary(message) {
+  if (!message) {
+    return "";
+  }
+
+  const paragraphs = message
+    .split("\n\n")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length === 0) {
+    return "";
+  }
+
+  if (/^Merge pull request #\d+\b/.test(paragraphs[0]) && paragraphs[1]) {
+    return paragraphs[1].split("\n")[0];
+  }
+
+  return paragraphs[0].split("\n")[0];
+}
+
+function isManifestsReleaseBumpCommit(commit) {
+  return (
+    commit.repoName === "notification-manifests" &&
+    /^New release:\s*v?\d+\.\d+\.\d+\s*->\s*v?\d+\.\d+\.\d+$/i.test(commit.message.trim())
+  );
+}
+
+function isNotificationPrBotCommit(commit) {
+  return (
+    commit.repoName === "notification-manifests" &&
+    ["notify-pr-bot[bot]", "Notify PR Bot"].includes(commit.authorName)
+  );
+}
+
 async function buildLogs(projects, extraFileChanges = []) {
   const uniqueByRepo = uniqueByKey(projects, "repoName");
   let logs = "";
@@ -173,7 +226,12 @@ async function buildLogs(projects, extraFileChanges = []) {
   if (uniqueByRepo.length > 0) {
     const repoCommitGroups = await Promise.all(
       uniqueByRepo.map(async (project) => {
-        const commits = await getCommitMessages(project.repoName, project.oldSha);
+        const commits = (await getCommitMessages(project.repoName, project.oldSha))
+          .filter(
+            (commit) =>
+              !isManifestsReleaseBumpCommit(commit) &&
+              !isNotificationPrBotCommit(commit)
+          );
         return {
           componentLabel: project.repoName.toUpperCase(),
           commits,
@@ -414,7 +472,8 @@ const getCommitMessages = async (repo, sha) => {
     .slice(0, index)
     .map((c) => ({
       repoName: repo,
-      message: c.commit.message.split("\n\n")[0],
+      message: getCommitMessageSummary(c.commit.message),
+      prNumber: getPullRequestNumberFromMessage(c.commit.message),
       url: c.html_url,
       authorName: c.commit.author ? c.commit.author.name : "Unknown",
     }));
