@@ -38,6 +38,7 @@ const repoDefaults = getRepoDefaults(TARGET_REPO, AWS_ECR_URL);
 const TITLE_PREFIX = getInput("TITLE_PREFIX", repoDefaults.titlePrefix);
 const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", repoDefaults.prTemplatePath);
 const PROJECTS = getJsonInput("PROJECTS", repoDefaults.projects);
+const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", repoDefaults.projectsLambdas);
 
 // Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -58,6 +59,10 @@ function shortSha(fullSha) {
     tag = tag.replaceAll("\"","");
     return tag;
   
+  }
+  
+  function getLambdaSha(imageName) {
+    return imageName.split(":").slice(-1)[0];
   }
   
   async function hydrateWithSHAs(projects) {
@@ -91,9 +96,39 @@ function shortSha(fullSha) {
     return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
   }
 
+  async function hydrateLambdasWithSHAs(projects) {
+    return await Promise.all(
+      projects.map(async (project) => {
+        project.headSha = await getHeadSha(project.repoName);
+        project.shortSha = shortSha(project.headSha)
+        project.headUrl = getLatestImageUrl(
+          projects,
+          project.ecrName,
+          project.headSha
+        );
+
+        const releaseContent = await getContents(
+          TARGET_REPO,
+          project.manifestFile
+        );
+
+        const originalFileContents = Base64.decode(releaseContent.content)
+        const re = new RegExp(`${project.ecrName}:\\S*`, "g");
+        const matches = originalFileContents.match(re);
+        project.oldUrl = matches[0]
+        project.oldSha = getLambdaSha(project.oldUrl);
+        return project;
+      })
+    );
+  }
+
+  function updateLambdaSha(content, project) {
+    return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
+  }
+
 // HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-async function main(closePRsFirst, titlePrefix, projects) {
+async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   const prTemplate = await getContents(
     TARGET_REPO,
     PR_TEMPLATE_PATH
@@ -101,6 +136,7 @@ async function main(closePRsFirst, titlePrefix, projects) {
   const issueContent = Base64.decode(prTemplate.content);
 
   await hydrateWithSHAs(projects);
+  await hydrateLambdasWithSHAs(projects_lambdas);
 
   const reducer = (previous, project) => ({ ...previous, [project.helmfileOverride]: (previous[project.helmfileOverride] || []).concat(project) })
   const projectsForFiles = projects.reduce(reducer, {})
@@ -124,9 +160,32 @@ async function main(closePRsFirst, titlePrefix, projects) {
     return { helmfileOverride, newReleaseContentBlob, releaseContent, fileHasChanged }
   })
 
+  const lambdaReducer = (previous, project) => ({ ...previous, [project.manifestFile]: (previous[project.manifestFile] || []).concat(project) })
+  const lambdaProjectsForFiles = projects_lambdas.reduce(lambdaReducer, {})
+
+  var changesToLambdaFiles = Object.entries(lambdaProjectsForFiles).map(async ([manifestFile, projectsForFile]) => {
+
+    const releaseContent = await getContents(
+      TARGET_REPO,
+      manifestFile
+    );
+
+    var fileContents = Base64.decode(releaseContent.content)
+    projectsForFile.forEach((project) => {
+      fileContents = updateLambdaSha(fileContents, project)
+    })
+
+    const newReleaseContentBlob = Base64.encode(fileContents);
+    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
+
+    return { manifestFile, newReleaseContentBlob, releaseContent, fileHasChanged }
+  })
+
   changesToHelmfile = await Promise.all(changesToHelmfile)
+  changesToLambdaFiles = await Promise.all(changesToLambdaFiles)
 
   const helmFilesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
+  const lambdaFilesHaveChanged = changesToLambdaFiles.some(({ fileHasChanged }) => fileHasChanged)
   const extraFileChanges = [];
 
   if (TARGET_REPO === "notification-terraform") {
@@ -138,8 +197,8 @@ async function main(closePRsFirst, titlePrefix, projects) {
 
   const extraFilesHaveChanged = extraFileChanges.some(({ fileHasChanged }) => fileHasChanged)
 
-  if (helmFilesHaveChanged || extraFilesHaveChanged) {
-    const releaseLogProjects = [...projects];
+  if (helmFilesHaveChanged || lambdaFilesHaveChanged || extraFilesHaveChanged) {
+    const releaseLogProjects = [...projects, ...projects_lambdas];
 
     if (
       TARGET_REPO === "notification-manifests" &&
@@ -162,8 +221,10 @@ async function main(closePRsFirst, titlePrefix, projects) {
     await createPR(
       titlePrefix,
       projects,
+      projects_lambdas,
       issueContent,
       changesToHelmfile,
+      changesToLambdaFiles,
       extraFileChanges,
       releaseLogProjects
     );
@@ -175,4 +236,4 @@ async function main(closePRsFirst, titlePrefix, projects) {
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-main(true, TITLE_PREFIX, PROJECTS);
+main(true, TITLE_PREFIX, PROJECTS, PROJECTS_LAMBDAS);
