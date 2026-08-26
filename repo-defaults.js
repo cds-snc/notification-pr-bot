@@ -32,12 +32,6 @@ function getRepoDefaults(targetRepo, awsEcrUrl) {
 
   const manifestsLambdas = [
     {
-      repoName: "notification-api",
-      manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-      ecrName: "api-lambda",
-    },
-    {
       repoName: "notification-lambdas",
       manifestFile: ".github/workflows/helmfile_production_apply.yaml",
       ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",

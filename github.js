@@ -70,14 +70,17 @@ function injectGeneratedContent(issueContent, logs) {
 async function createPR(
   titlePrefix,
   projects,
+  projects_lambdas,
   issueContent,
   changesToHelmfile,
+  changesToLambdaFiles,
   extraFileChanges,
-  releaseLogProjects = projects,
+  releaseLogProjects = [...projects, ...projects_lambdas],
 ) {
   const branchName = `release-${new Date().getTime()}`;
   const targetRepoSha = await getHeadSha(TARGET_REPO);
-  // pass in the projects so that the changes for all repos will be listed in the PR
+  // pass in the projects and projects_lambdas so that the changes for all repos
+  // will be listed in the PR
   const logs = await buildLogs(releaseLogProjects, extraFileChanges);
 
   const ref = await octokit.rest.git.createRef({
@@ -88,6 +91,7 @@ async function createPR(
   });
 
   const changedHelmfileUpdates = changesToHelmfile.filter(({ fileHasChanged }) => fileHasChanged);
+  const changedLambdaFileUpdates = changesToLambdaFiles.filter(({ fileHasChanged }) => fileHasChanged);
 
   const helmManifestUpdates = projects
     .map((project) => {
@@ -103,6 +107,24 @@ async function createPR(
       sha: releaseContent.sha,
       path: helmfileOverride,
       message: `Updated manifests to ${helmManifestUpdates}`,
+      content: newReleaseContentBlob,
+    })
+  }
+
+  const lambdaManifestUpdates = projects_lambdas
+    .map((project) => {
+      return `${project.repoName}:${project.shortSha}`;
+    })
+    .join(" and ");
+
+  for (const { manifestFile, releaseContent, newReleaseContentBlob } of changedLambdaFileUpdates) {
+    await octokit.rest.repos.createOrUpdateFileContents({
+      owner: GH_CDS,
+      repo: TARGET_REPO,
+      branch: branchName,
+      sha: releaseContent.sha,
+      path: manifestFile,
+      message: `Updated manifests to ${lambdaManifestUpdates}`,
       content: newReleaseContentBlob,
     })
   }
