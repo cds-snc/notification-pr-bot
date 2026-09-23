@@ -28,6 +28,62 @@ function getRepoDefaults(targetRepo, awsEcrUrl) {
       ecrUrl: awsEcrUrl,
       ecrName: "notify-documentation",
     },
+    {
+      repoName: "notification-lambdas",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "SES_RECEIVING_EMAILS_DOCKER_TAG",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.us-east-1.amazonaws.com",
+      ecrName: "notify/ses_receiving_emails",
+    },
+    {
+      repoName: "notification-lambdas",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "SNS_TO_SQS_SMS_CALLBACKS_DOCKER_TAG",
+      ecrUrl: awsEcrUrl,
+      ecrName: "notify/sns_to_sqs_sms_callbacks",
+    },
+    {
+      repoName: "notification-lambdas",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "BLAZER_DOCKER_TAG",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com",
+      ecrName: "database-tools/blazer",
+    },
+    {
+      repoName: "notification-lambdas",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "GOOGLE_CIDR_DOCKER_TAG",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com",
+      ecrName: "lambda/google-cidr",
+    },
+    {
+      repoName: "notification-lambdas",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "HEARTBEAT_DOCKER_TAG",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com",
+      ecrName: "notify/heartbeat",
+    },
+    {
+      repoName: "notification-lambdas",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "PINPOINT_TO_SQS_SMS_CALLBACKS_DOCKER_TAG",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com",
+      ecrName: "notify/pinpoint_to_sqs_sms_callbacks",
+    },
+    {
+      repoName: "notification-lambdas",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "SES_TO_SQS_EMAIL_CALLBACKS_DOCKER_TAG",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com",
+      ecrName: "notify/ses_to_sqs_email_callbacks",
+    },
+    {
+      repoName: "notification-lambdas",
+      helmfileOverride: "helmfile/overrides/production.env",
+      helmfileTagKey: "SYSTEM_STATUS_DOCKER_TAG",
+      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com",
+      ecrName: "notify/system_status",
+    },
   ];
 
   const manifestsLambdas = [
