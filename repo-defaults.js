@@ -86,33 +86,12 @@ function getRepoDefaults(targetRepo, awsEcrUrl) {
     },
   ];
 
-  const manifestsLambdas = [
-    {
-      repoName: "notification-lambdas",
-      manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-      ecrName: "heartbeat",
-    },
-    {
-      repoName: "notification-lambdas",
-      manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-      ecrName: "system_status",
-    },
-    {
-      repoName: "notification-lambdas",
-      manifestFile: ".github/workflows/helmfile_production_apply.yaml",
-      ecrUrl: "${PRODUCTION_ECR_ACCOUNT}.dkr.ecr.ca-central-1.amazonaws.com/notify",
-      ecrName: "ses_to_sqs_email_callbacks",
-    },
-  ];
-
   const defaultsByRepo = {
     "notification-manifests": {
       titlePrefix: "[AUTO-PR]",
       prTemplatePath: ".github/release_pr_template.md",
       projects: manifestsProjects,
-      projectsLambdas: manifestsLambdas,
+      projectsLambdas: [],
     },
     "notification-terraform": {
       titlePrefix: "[AUTO-PR]",
