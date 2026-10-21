@@ -1,5 +1,15 @@
 name: 'Notification PR Bot'
 description: 'Creates automated production deployment PRs for a cds-snc target repository'
 runs:
-  using: 'node12'
-  main: 'dist/index.js'
+  using: 'composite'
+  steps:
+    # Pin a Node release that blocks the compromised eMudhra/emSign intermediates
+    # (nodejs/node#66871). The runner's bundled Node used by `using: nodeXX` cannot be pinned.
+    - name: Set up Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24.22.1'
+
+    - name: Run PR bot
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/dist/index.js"
