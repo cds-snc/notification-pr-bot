@@ -1,5 +1,5 @@
 # Use the official TypeScript Node.js image as a base
-FROM mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm
+FROM mcr.microsoft.com/devcontainers/typescript-node:1-24-bookworm
 
 # Install additional features
 RUN apt-get update && apt-get install -y \
