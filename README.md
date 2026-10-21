@@ -30,13 +30,6 @@ is configured in the consuming repository workflows.
 Advanced use: set `PROJECTS` / `PROJECTS_LAMBDAS` JSON only if you need to
 override the built-in repo defaults.
 
-## Node.js version
-
-The action runs on a pinned Node.js release (see [action.yaml](action.yaml) and
-[.nvmrc](.nvmrc)) rather than the runner's bundled Node. Node.js `>=24.22.1`
-is required because it rejects TLS chains through the compromised
-eMudhra/emSign intermediates ([nodejs/node#66871](https://github.com/nodejs/node/pull/66871)).
-
 ## Development
 
 Edit the [index.js](index.js) file as needed and then run the build command to
