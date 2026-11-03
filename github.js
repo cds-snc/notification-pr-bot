@@ -139,7 +139,7 @@ async function createPR(
       owner: GH_CDS,
       repo: TARGET_REPO,
       branch: branchName,
-      sha: releaseContent.sha,
+      sha: releaseContent?.sha,
       path: filePath,
       message: commitMessage,
       content: newReleaseContentBlob,

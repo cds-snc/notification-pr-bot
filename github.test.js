@@ -1,10 +1,24 @@
 // Mock Octokit modules before any require() calls so that github.js
 // gets the mock when it is first loaded.
 const mockListCommits = jest.fn();
+const mockGetRepo = jest.fn();
+const mockGetBranch = jest.fn();
+const mockCreateRef = jest.fn();
+const mockCreatePull = jest.fn();
+const mockUpdateContents = jest.fn();
 
 jest.mock("@octokit/core", () => {
   function MockOctokit() {
-    this.rest = { repos: { listCommits: mockListCommits } };
+    this.rest = {
+      repos: {
+        listCommits: mockListCommits,
+        get: mockGetRepo,
+        getBranch: mockGetBranch,
+        createOrUpdateFileContents: mockUpdateContents,
+      },
+      git: { createRef: mockCreateRef },
+      pulls: { create: mockCreatePull },
+    };
   }
   MockOctokit.plugin = function () {
     return MockOctokit;
@@ -23,7 +37,7 @@ jest.mock("js-base64", () => ({ Base64: { encode: (s) => s } }));
 // Set a dummy token so the module loads without crashing.
 process.env.TOKEN = "test-token";
 
-const { buildLogs } = require("./github");
+const { buildLogs, createPR } = require("./github");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -55,6 +69,27 @@ function setupListCommits(apiCommits) {
 
 beforeEach(() => {
   mockListCommits.mockReset();
+  mockGetRepo.mockReset();
+  mockGetBranch.mockReset();
+  mockCreateRef.mockReset();
+  mockCreatePull.mockReset();
+  mockUpdateContents.mockReset();
+});
+
+test("creates a new revision record on the release branch without an existing file SHA", async () => {
+  mockGetRepo.mockResolvedValue({ data: { default_branch: "main" } });
+  mockGetBranch.mockResolvedValue({ data: { commit: { sha: "base-sha" } } });
+  await createPR("Release", [], [], "<!-- RELEASE_SUMMARY -->", [], [], [{
+    filePath: "release-images.json",
+    newReleaseContentBlob: "encoded-record",
+    commitMessage: "Record selected production image revisions",
+    fileHasChanged: true,
+  }], []);
+  expect(mockUpdateContents).toHaveBeenCalledWith(expect.objectContaining({
+    path: "release-images.json", content: "encoded-record", sha: undefined,
+    branch: expect.stringMatching(/^release-/),
+  }));
+  expect(mockCreatePull).toHaveBeenCalledWith(expect.objectContaining({ base: "main", draft: true }));
 });
 
 describe("buildLogs – empty repository headers", () => {

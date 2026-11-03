@@ -16,6 +16,25 @@ the currently deployed `VERSION` ref (tag or commit SHA).
 This repository provides the bot/action logic. Triggering when to run the bot
 is configured in the consuming repository workflows.
 
+## Production image revision record
+
+For `notification-manifests`, each release PR also includes `release-images.json`
+alongside the production tag changes. Version 1 records the source repository,
+full selected commit SHA, and seven-character image tag for every configured
+release image. Each source repository HEAD is fetched once per bot run so images
+from the same repository select the same revision.
+
+The production image gate compares this record with the production configuration
+and checks public and private ECR before allowing deployment. It does not compare
+with a moving branch HEAD at deployment time. For a rollback or a manually selected
+revision, restore or update both the configuration tag and its revision record.
+Custom `PROJECTS`/`PROJECTS_LAMBDAS` entries targeting manifests must include the
+corresponding `helmfileTagKey`.
+
+Roll out this bot change before enabling the manifests gate, then regenerate the
+production release PR to populate the record. A missing record intentionally
+blocks release validation. The Terraform target does not generate this file.
+
 ## Environment variables
 
 | Variable | Default | Description |

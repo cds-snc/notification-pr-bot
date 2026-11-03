@@ -65,10 +65,10 @@ function shortSha(fullSha) {
     return imageName.split(":").slice(-1)[0];
   }
   
-  async function hydrateWithSHAs(projects) {
+  async function hydrateWithSHAs(projects, getRevision = getHeadSha) {
     return await Promise.all(
       projects.map(async (project) => {
-        project.headSha = await getHeadSha(project.repoName);
+        project.headSha = await getRevision(project.repoName);
         project.shortSha = shortSha(project.headSha)
         project.headUrl = getLatestImageUrl(
           projects,
@@ -96,10 +96,10 @@ function shortSha(fullSha) {
     return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
   }
 
-  async function hydrateLambdasWithSHAs(projects) {
+  async function hydrateLambdasWithSHAs(projects, getRevision = getHeadSha) {
     return await Promise.all(
       projects.map(async (project) => {
-        project.headSha = await getHeadSha(project.repoName);
+        project.headSha = await getRevision(project.repoName);
         project.shortSha = shortSha(project.headSha)
         project.headUrl = getLatestImageUrl(
           projects,
@@ -128,6 +128,38 @@ function shortSha(fullSha) {
 
 // HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+async function getReleaseImageChange(projects) {
+  const filePath = "release-images.json";
+  const images = {};
+  for (const project of projects) {
+    if (!project.helmfileTagKey || !/^[0-9a-f]{40}$/.test(project.headSha)) {
+      throw new Error(`Cannot record release revision for ${project.repoName}: missing tag key or full SHA`);
+    }
+    if (images[project.helmfileTagKey]) {
+      throw new Error(`Duplicate release image key: ${project.helmfileTagKey}`);
+    }
+    images[project.helmfileTagKey] = {
+      source: `cds-snc/${project.repoName}`,
+      sha: project.headSha,
+      tag: shortSha(project.headSha),
+    };
+  }
+  let releaseContent;
+  try {
+    releaseContent = await getContents(TARGET_REPO, filePath);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+  }
+  const content = `${JSON.stringify({ version: 1, images }, null, 2)}\n`;
+  return {
+    filePath,
+    releaseContent,
+    newReleaseContentBlob: Base64.encode(content),
+    fileHasChanged: !releaseContent || Base64.decode(releaseContent.content) !== content,
+    commitMessage: "Record selected production image revisions",
+  };
+}
+
 async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   const prTemplate = await getContents(
     TARGET_REPO,
@@ -135,8 +167,13 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   );
   const issueContent = Base64.decode(prTemplate.content);
 
-  await hydrateWithSHAs(projects);
-  await hydrateLambdasWithSHAs(projects_lambdas);
+  const revisions = new Map();
+  const getRevision = (repo) => {
+    if (!revisions.has(repo)) revisions.set(repo, getHeadSha(repo));
+    return revisions.get(repo);
+  };
+  await hydrateWithSHAs(projects, getRevision);
+  await hydrateLambdasWithSHAs(projects_lambdas, getRevision);
 
   const reducer = (previous, project) => ({ ...previous, [project.helmfileOverride]: (previous[project.helmfileOverride] || []).concat(project) })
   const projectsForFiles = projects.reduce(reducer, {})
@@ -188,6 +225,11 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
   const lambdaFilesHaveChanged = changesToLambdaFiles.some(({ fileHasChanged }) => fileHasChanged)
   const extraFileChanges = [];
 
+  if (TARGET_REPO === "notification-manifests") {
+    const imageChange = await getReleaseImageChange([...projects, ...projects_lambdas]);
+    if (imageChange.fileHasChanged) extraFileChanges.push(imageChange);
+  }
+
   if (TARGET_REPO === "notification-terraform") {
     const terraformVersionChange = await getTerraformVersionChange();
     if (terraformVersionChange && terraformVersionChange.fileHasChanged) {
@@ -236,4 +278,11 @@ async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
 
 // Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-main(true, TITLE_PREFIX, PROJECTS, PROJECTS_LAMBDAS);
+if (require.main === module) {
+  main(true, TITLE_PREFIX, PROJECTS, PROJECTS_LAMBDAS).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { main, getReleaseImageChange };

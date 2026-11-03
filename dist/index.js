@@ -145,7 +145,7 @@ async function createPR(
       owner: GH_CDS,
       repo: TARGET_REPO,
       branch: branchName,
-      sha: releaseContent.sha,
+      sha: releaseContent?.sha,
       path: filePath,
       message: commitMessage,
       content: newReleaseContentBlob,
@@ -628,6 +628,301 @@ module.exports = {
   isNotLatestTerraformVersion,
   getTerraformVersionChange,
 }
+
+
+/***/ }),
+
+/***/ 932:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+const Base64 = (__nccwpck_require__(139).Base64);
+const process = __nccwpck_require__(282);
+
+const {
+  AWS_ECR_URL,
+  TARGET_REPO,
+  closePRs,
+  createPR,
+  getContents,
+  getHeadSha,
+  getTerraformVersionChange,
+} = __nccwpck_require__(535)
+const { getRepoDefaults } = __nccwpck_require__(4)
+
+// Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Values are provided via environment variables.
+
+function getInput(name, defaultValue) {
+  const envVar = process.env[name];
+  if (envVar !== undefined && envVar !== "") return envVar;
+  return defaultValue;
+}
+
+function getJsonInput(name, defaultValue) {
+  const raw = getInput(name, null);
+  if (raw === null) return defaultValue;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error(`Failed to parse ${name} as JSON: ${e.message}`);
+    return defaultValue;
+  }
+}
+
+// Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+const repoDefaults = getRepoDefaults(TARGET_REPO, AWS_ECR_URL);
+const TITLE_PREFIX = getInput("TITLE_PREFIX", repoDefaults.titlePrefix);
+const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", repoDefaults.prTemplatePath);
+const PROJECTS = getJsonInput("PROJECTS", repoDefaults.projects);
+const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", repoDefaults.projectsLambdas);
+
+// Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+function shortSha(fullSha) {
+    return fullSha.slice(0, 7);
+  }
+  
+  function getLatestImageUrl(projects, projectName, headSha) {
+    const ecrUrl = projects.filter(project => project["ecrName"] == projectName)[0].ecrUrl
+    return `${ecrUrl}/${projectName}:${shortSha(headSha)}`;
+  }
+  
+  function getSha(project, content) {
+    const helmfileRe = new RegExp(`${project.helmfileTagKey}: "(.*?)"`, "g")
+    const result = content.match(helmfileRe)[0]
+    const tagShaRe = new RegExp(`"(.*?)"`, "g")
+    var tag = result.match(tagShaRe)[0]
+    tag = tag.replaceAll("\"","");
+    return tag;
+  
+  }
+  
+  function getLambdaSha(imageName) {
+    return imageName.split(":").slice(-1)[0];
+  }
+  
+  async function hydrateWithSHAs(projects, getRevision = getHeadSha) {
+    return await Promise.all(
+      projects.map(async (project) => {
+        project.headSha = await getRevision(project.repoName);
+        project.shortSha = shortSha(project.headSha)
+        project.headUrl = getLatestImageUrl(
+          projects,
+          project.ecrName,
+          project.headSha
+        );
+  
+        // Patch the helmfile tags
+        const helmfileContent = await getContents(
+          TARGET_REPO,
+          project.helmfileOverride
+        );
+  
+        const helmfileContents = Base64.decode(helmfileContent.content)
+        
+        project.oldSha = getSha(project, helmfileContents);
+  
+        return project;
+      })
+    );
+  }
+
+  function updateHelmfileSha(content,project) {
+    let re = new RegExp(String.raw`${project.helmfileTagKey}: "(.*?)"`, "g");
+    return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
+  }
+
+  async function hydrateLambdasWithSHAs(projects, getRevision = getHeadSha) {
+    return await Promise.all(
+      projects.map(async (project) => {
+        project.headSha = await getRevision(project.repoName);
+        project.shortSha = shortSha(project.headSha)
+        project.headUrl = getLatestImageUrl(
+          projects,
+          project.ecrName,
+          project.headSha
+        );
+
+        const releaseContent = await getContents(
+          TARGET_REPO,
+          project.manifestFile
+        );
+
+        const originalFileContents = Base64.decode(releaseContent.content)
+        const re = new RegExp(`${project.ecrName}:\\S*`, "g");
+        const matches = originalFileContents.match(re);
+        project.oldUrl = matches[0]
+        project.oldSha = getLambdaSha(project.oldUrl);
+        return project;
+      })
+    );
+  }
+
+  function updateLambdaSha(content, project) {
+    return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
+  }
+
+// HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+async function getReleaseImageChange(projects) {
+  const filePath = "release-images.json";
+  const images = {};
+  for (const project of projects) {
+    if (!project.helmfileTagKey || !/^[0-9a-f]{40}$/.test(project.headSha)) {
+      throw new Error(`Cannot record release revision for ${project.repoName}: missing tag key or full SHA`);
+    }
+    if (images[project.helmfileTagKey]) {
+      throw new Error(`Duplicate release image key: ${project.helmfileTagKey}`);
+    }
+    images[project.helmfileTagKey] = {
+      source: `cds-snc/${project.repoName}`,
+      sha: project.headSha,
+      tag: shortSha(project.headSha),
+    };
+  }
+  let releaseContent;
+  try {
+    releaseContent = await getContents(TARGET_REPO, filePath);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+  }
+  const content = `${JSON.stringify({ version: 1, images }, null, 2)}\n`;
+  return {
+    filePath,
+    releaseContent,
+    newReleaseContentBlob: Base64.encode(content),
+    fileHasChanged: !releaseContent || Base64.decode(releaseContent.content) !== content,
+    commitMessage: "Record selected production image revisions",
+  };
+}
+
+async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
+  const prTemplate = await getContents(
+    TARGET_REPO,
+    PR_TEMPLATE_PATH
+  );
+  const issueContent = Base64.decode(prTemplate.content);
+
+  const revisions = new Map();
+  const getRevision = (repo) => {
+    if (!revisions.has(repo)) revisions.set(repo, getHeadSha(repo));
+    return revisions.get(repo);
+  };
+  await hydrateWithSHAs(projects, getRevision);
+  await hydrateLambdasWithSHAs(projects_lambdas, getRevision);
+
+  const reducer = (previous, project) => ({ ...previous, [project.helmfileOverride]: (previous[project.helmfileOverride] || []).concat(project) })
+  const projectsForFiles = projects.reduce(reducer, {})
+
+  var changesToHelmfile = Object.entries(projectsForFiles).map(async ([helmfileOverride, projectsForFile]) => {
+
+    const releaseContent = await getContents(
+      TARGET_REPO,
+      helmfileOverride
+    );
+
+
+    var fileContents = Base64.decode(releaseContent.content)
+    projectsForFile.forEach((project) => {
+      fileContents = updateHelmfileSha(fileContents, project)
+    })
+
+    const newReleaseContentBlob = Base64.encode(fileContents);
+    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
+
+    return { helmfileOverride, newReleaseContentBlob, releaseContent, fileHasChanged }
+  })
+
+  const lambdaReducer = (previous, project) => ({ ...previous, [project.manifestFile]: (previous[project.manifestFile] || []).concat(project) })
+  const lambdaProjectsForFiles = projects_lambdas.reduce(lambdaReducer, {})
+
+  var changesToLambdaFiles = Object.entries(lambdaProjectsForFiles).map(async ([manifestFile, projectsForFile]) => {
+
+    const releaseContent = await getContents(
+      TARGET_REPO,
+      manifestFile
+    );
+
+    var fileContents = Base64.decode(releaseContent.content)
+    projectsForFile.forEach((project) => {
+      fileContents = updateLambdaSha(fileContents, project)
+    })
+
+    const newReleaseContentBlob = Base64.encode(fileContents);
+    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
+
+    return { manifestFile, newReleaseContentBlob, releaseContent, fileHasChanged }
+  })
+
+  changesToHelmfile = await Promise.all(changesToHelmfile)
+  changesToLambdaFiles = await Promise.all(changesToLambdaFiles)
+
+  const helmFilesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
+  const lambdaFilesHaveChanged = changesToLambdaFiles.some(({ fileHasChanged }) => fileHasChanged)
+  const extraFileChanges = [];
+
+  if (TARGET_REPO === "notification-manifests") {
+    const imageChange = await getReleaseImageChange([...projects, ...projects_lambdas]);
+    if (imageChange.fileHasChanged) extraFileChanges.push(imageChange);
+  }
+
+  if (TARGET_REPO === "notification-terraform") {
+    const terraformVersionChange = await getTerraformVersionChange();
+    if (terraformVersionChange && terraformVersionChange.fileHasChanged) {
+      extraFileChanges.push(terraformVersionChange);
+    }
+  }
+
+  const extraFilesHaveChanged = extraFileChanges.some(({ fileHasChanged }) => fileHasChanged)
+
+  if (helmFilesHaveChanged || lambdaFilesHaveChanged || extraFilesHaveChanged) {
+    const releaseLogProjects = [...projects, ...projects_lambdas];
+
+    if (
+      TARGET_REPO === "notification-manifests" &&
+      !releaseLogProjects.some((project) => project.repoName === TARGET_REPO)
+    ) {
+      const versionFile = await getContents(TARGET_REPO, "VERSION");
+      const currentVersion = Base64.decode(versionFile.content).trim();
+
+      if (currentVersion) {
+        releaseLogProjects.push({
+          repoName: TARGET_REPO,
+          oldSha: currentVersion,
+        });
+      }
+    }
+
+    if (closePRsFirst) {
+      await closePRs(titlePrefix);
+    }
+    await createPR(
+      titlePrefix,
+      projects,
+      projects_lambdas,
+      issueContent,
+      changesToHelmfile,
+      changesToLambdaFiles,
+      extraFileChanges,
+      releaseLogProjects
+    );
+  } else {
+    console.log("No changes detected, skipping PR creation.");
+  }
+}
+
+
+// Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+if (require.main === require.cache[eval('__filename')]) {
+  main(true, TITLE_PREFIX, PROJECTS, PROJECTS_LAMBDAS).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { main, getReleaseImageChange };
 
 
 /***/ }),
@@ -4647,6 +4942,10 @@ function getNodeRequestOptions(request) {
 		agent = agent(parsedURL);
 	}
 
+	if (!headers.has('Connection') && !agent) {
+		headers.set('Connection', 'close');
+	}
+
 	// HTTP-network fetch step 4.2
 	// chunked encoding is handled by Node.js
 
@@ -5020,11 +5319,8 @@ function fixResponseChunkedTransferBadEnding(request, errorCallback) {
 
 		if (headers['transfer-encoding'] === 'chunked' && !headers['content-length']) {
 			response.once('close', function (hadError) {
-				// tests for socket presence, as in some situations the
-				// the 'socket' event is not triggered for the request
-				// (happens in deno), avoids `TypeError`
 				// if a data listener is still present we didn't end cleanly
-				const hasDataListener = socket && socket.listenerCount('data') > 0;
+				const hasDataListener = socket.listenerCount('data') > 0;
 
 				if (hasDataListener && !hadError) {
 					const err = new Error('Premature close');
@@ -5066,7 +5362,6 @@ exports.Headers = Headers;
 exports.Request = Request;
 exports.Response = Response;
 exports.FetchError = FetchError;
-exports.AbortError = AbortError;
 
 
 /***/ }),
@@ -5334,7 +5629,7 @@ function getUserAgent() {
     return navigator.userAgent;
   }
 
-  if (typeof process === "object" && process.version !== undefined) {
+  if (typeof process === "object" && "version" in process) {
     return `Node.js/${process.version.substr(1)} (${process.platform}; ${process.arch})`;
   }
 
@@ -7579,251 +7874,12 @@ module.exports = JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45,46],"valid"]
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
 /******/ 	
 /************************************************************************/
-var __webpack_exports__ = {};
-// This entry need to be wrapped in an IIFE because it need to be isolated against other modules in the chunk.
-(() => {
-const Base64 = (__nccwpck_require__(139).Base64);
-const process = __nccwpck_require__(282);
-
-const {
-  AWS_ECR_URL,
-  TARGET_REPO,
-  closePRs,
-  createPR,
-  getContents,
-  getHeadSha,
-  getTerraformVersionChange,
-} = __nccwpck_require__(535)
-const { getRepoDefaults } = __nccwpck_require__(4)
-
-// Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Values are provided via environment variables.
-
-function getInput(name, defaultValue) {
-  const envVar = process.env[name];
-  if (envVar !== undefined && envVar !== "") return envVar;
-  return defaultValue;
-}
-
-function getJsonInput(name, defaultValue) {
-  const raw = getInput(name, null);
-  if (raw === null) return defaultValue;
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error(`Failed to parse ${name} as JSON: ${e.message}`);
-    return defaultValue;
-  }
-}
-
-// Images to update ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-const repoDefaults = getRepoDefaults(TARGET_REPO, AWS_ECR_URL);
-const TITLE_PREFIX = getInput("TITLE_PREFIX", repoDefaults.titlePrefix);
-const PR_TEMPLATE_PATH = getInput("PR_TEMPLATE_PATH", repoDefaults.prTemplatePath);
-const PROJECTS = getJsonInput("PROJECTS", repoDefaults.projects);
-const PROJECTS_LAMBDAS = getJsonInput("PROJECTS_LAMBDAS", repoDefaults.projectsLambdas);
-
-// Shas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-function shortSha(fullSha) {
-    return fullSha.slice(0, 7);
-  }
-  
-  function getLatestImageUrl(projects, projectName, headSha) {
-    const ecrUrl = projects.filter(project => project["ecrName"] == projectName)[0].ecrUrl
-    return `${ecrUrl}/${projectName}:${shortSha(headSha)}`;
-  }
-  
-  function getSha(project, content) {
-    const helmfileRe = new RegExp(`${project.helmfileTagKey}: "(.*?)"`, "g")
-    const result = content.match(helmfileRe)[0]
-    const tagShaRe = new RegExp(`"(.*?)"`, "g")
-    var tag = result.match(tagShaRe)[0]
-    tag = tag.replaceAll("\"","");
-    return tag;
-  
-  }
-  
-  function getLambdaSha(imageName) {
-    return imageName.split(":").slice(-1)[0];
-  }
-  
-  async function hydrateWithSHAs(projects) {
-    return await Promise.all(
-      projects.map(async (project) => {
-        project.headSha = await getHeadSha(project.repoName);
-        project.shortSha = shortSha(project.headSha)
-        project.headUrl = getLatestImageUrl(
-          projects,
-          project.ecrName,
-          project.headSha
-        );
-  
-        // Patch the helmfile tags
-        const helmfileContent = await getContents(
-          TARGET_REPO,
-          project.helmfileOverride
-        );
-  
-        const helmfileContents = Base64.decode(helmfileContent.content)
-        
-        project.oldSha = getSha(project, helmfileContents);
-  
-        return project;
-      })
-    );
-  }
-
-  function updateHelmfileSha(content,project) {
-    let re = new RegExp(String.raw`${project.helmfileTagKey}: "(.*?)"`, "g");
-    return content.replace(re, `${project.helmfileTagKey}: "${shortSha(project.headSha)}"`);
-  }
-
-  async function hydrateLambdasWithSHAs(projects) {
-    return await Promise.all(
-      projects.map(async (project) => {
-        project.headSha = await getHeadSha(project.repoName);
-        project.shortSha = shortSha(project.headSha)
-        project.headUrl = getLatestImageUrl(
-          projects,
-          project.ecrName,
-          project.headSha
-        );
-
-        const releaseContent = await getContents(
-          TARGET_REPO,
-          project.manifestFile
-        );
-
-        const originalFileContents = Base64.decode(releaseContent.content)
-        const re = new RegExp(`${project.ecrName}:\\S*`, "g");
-        const matches = originalFileContents.match(re);
-        project.oldUrl = matches[0]
-        project.oldSha = getLambdaSha(project.oldUrl);
-        return project;
-      })
-    );
-  }
-
-  function updateLambdaSha(content, project) {
-    return content.replace(`${project.ecrName}:${project.oldSha}`, `${project.ecrName}:${shortSha(project.headSha)}`)
-  }
-
-// HELMFILE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-async function main(closePRsFirst, titlePrefix, projects, projects_lambdas) {
-  const prTemplate = await getContents(
-    TARGET_REPO,
-    PR_TEMPLATE_PATH
-  );
-  const issueContent = Base64.decode(prTemplate.content);
-
-  await hydrateWithSHAs(projects);
-  await hydrateLambdasWithSHAs(projects_lambdas);
-
-  const reducer = (previous, project) => ({ ...previous, [project.helmfileOverride]: (previous[project.helmfileOverride] || []).concat(project) })
-  const projectsForFiles = projects.reduce(reducer, {})
-
-  var changesToHelmfile = Object.entries(projectsForFiles).map(async ([helmfileOverride, projectsForFile]) => {
-
-    const releaseContent = await getContents(
-      TARGET_REPO,
-      helmfileOverride
-    );
-
-
-    var fileContents = Base64.decode(releaseContent.content)
-    projectsForFile.forEach((project) => {
-      fileContents = updateHelmfileSha(fileContents, project)
-    })
-
-    const newReleaseContentBlob = Base64.encode(fileContents);
-    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
-
-    return { helmfileOverride, newReleaseContentBlob, releaseContent, fileHasChanged }
-  })
-
-  const lambdaReducer = (previous, project) => ({ ...previous, [project.manifestFile]: (previous[project.manifestFile] || []).concat(project) })
-  const lambdaProjectsForFiles = projects_lambdas.reduce(lambdaReducer, {})
-
-  var changesToLambdaFiles = Object.entries(lambdaProjectsForFiles).map(async ([manifestFile, projectsForFile]) => {
-
-    const releaseContent = await getContents(
-      TARGET_REPO,
-      manifestFile
-    );
-
-    var fileContents = Base64.decode(releaseContent.content)
-    projectsForFile.forEach((project) => {
-      fileContents = updateLambdaSha(fileContents, project)
-    })
-
-    const newReleaseContentBlob = Base64.encode(fileContents);
-    const fileHasChanged = newReleaseContentBlob.trim() != releaseContent.content.trim()
-
-    return { manifestFile, newReleaseContentBlob, releaseContent, fileHasChanged }
-  })
-
-  changesToHelmfile = await Promise.all(changesToHelmfile)
-  changesToLambdaFiles = await Promise.all(changesToLambdaFiles)
-
-  const helmFilesHaveChanged = changesToHelmfile.some(({ fileHasChanged }) => fileHasChanged)
-  const lambdaFilesHaveChanged = changesToLambdaFiles.some(({ fileHasChanged }) => fileHasChanged)
-  const extraFileChanges = [];
-
-  if (TARGET_REPO === "notification-terraform") {
-    const terraformVersionChange = await getTerraformVersionChange();
-    if (terraformVersionChange && terraformVersionChange.fileHasChanged) {
-      extraFileChanges.push(terraformVersionChange);
-    }
-  }
-
-  const extraFilesHaveChanged = extraFileChanges.some(({ fileHasChanged }) => fileHasChanged)
-
-  if (helmFilesHaveChanged || lambdaFilesHaveChanged || extraFilesHaveChanged) {
-    const releaseLogProjects = [...projects, ...projects_lambdas];
-
-    if (
-      TARGET_REPO === "notification-manifests" &&
-      !releaseLogProjects.some((project) => project.repoName === TARGET_REPO)
-    ) {
-      const versionFile = await getContents(TARGET_REPO, "VERSION");
-      const currentVersion = Base64.decode(versionFile.content).trim();
-
-      if (currentVersion) {
-        releaseLogProjects.push({
-          repoName: TARGET_REPO,
-          oldSha: currentVersion,
-        });
-      }
-    }
-
-    if (closePRsFirst) {
-      await closePRs(titlePrefix);
-    }
-    await createPR(
-      titlePrefix,
-      projects,
-      projects_lambdas,
-      issueContent,
-      changesToHelmfile,
-      changesToLambdaFiles,
-      extraFileChanges,
-      releaseLogProjects
-    );
-  } else {
-    console.log("No changes detected, skipping PR creation.");
-  }
-}
-
-
-// Main execute ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-main(true, TITLE_PREFIX, PROJECTS, PROJECTS_LAMBDAS);
-
-})();
-
-module.exports = __webpack_exports__;
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module is referenced by other modules so it can't be inlined
+/******/ 	var __webpack_exports__ = __nccwpck_require__(932);
+/******/ 	module.exports = __webpack_exports__;
+/******/ 	
 /******/ })()
 ;
