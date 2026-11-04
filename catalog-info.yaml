@@ -2,10 +2,15 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: notification-pr-bot
-  description: Small script to make deploy to production PRs for Notify
+  title: Notification PR Bot
+  description: GitHub Action that prepares production release pull requests for GC Notify.
+  annotations:
+    github.com/project-slug: cds-snc/notification-pr-bot
+    backstage.io/source-location: url:https://github.com/cds-snc/notification-pr-bot/tree/main/
   labels:
     license: MIT
 spec:
-  type: website
-  lifecycle: experimental
-  owner: notify-dev
+  type: tool
+  lifecycle: production
+  owner: group:cds-snc/notify-dev
+  system: gc-notification
