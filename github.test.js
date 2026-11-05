@@ -1,10 +1,18 @@
 // Mock Octokit modules before any require() calls so that github.js
 // gets the mock when it is first loaded.
 const mockListCommits = jest.fn();
+const mockGetRepository = jest.fn();
+const mockGetBranch = jest.fn();
 
 jest.mock("@octokit/core", () => {
   function MockOctokit() {
-    this.rest = { repos: { listCommits: mockListCommits } };
+    this.rest = {
+      repos: {
+        listCommits: mockListCommits,
+        get: mockGetRepository,
+        getBranch: mockGetBranch,
+      },
+    };
   }
   MockOctokit.plugin = function () {
     return MockOctokit;
@@ -23,7 +31,18 @@ jest.mock("js-base64", () => ({ Base64: { encode: (s) => s } }));
 // Set a dummy token so the module loads without crashing.
 process.env.TOKEN = "test-token";
 
-const { buildLogs } = require("./github");
+const { buildLogs, getHeadSha } = require("./github");
+const { getRepoDefaults } = require("./repo-defaults");
+
+test("tracks notification-geolocate-webservice without changing its published image", () => {
+  const defaults = getRepoDefaults("notification-manifests", "public.ecr.aws/cds-snc");
+  const ipv4 = defaults.projects.find((project) => project.helmfileTagKey === "IPV4_DOCKER_TAG");
+  expect(ipv4).toEqual(expect.objectContaining({
+    repoName: "notification-geolocate-webservice",
+    ecrUrl: "public.ecr.aws/cds-snc",
+    ecrName: "notify-ipv4-geolocate-webservice",
+  }));
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -55,6 +74,32 @@ function setupListCommits(apiCommits) {
 
 beforeEach(() => {
   mockListCommits.mockReset();
+  mockGetRepository.mockReset();
+  mockGetBranch.mockReset();
+});
+
+test("uses the renamed source in GitHub API calls and constructed release links", async () => {
+  const project = getRepoDefaults("notification-manifests", "public.ecr.aws/cds-snc")
+    .projects.find((entry) => entry.helmfileTagKey === "IPV4_DOCKER_TAG");
+  const sha = "a".repeat(40);
+  mockGetRepository.mockResolvedValue({ data: { default_branch: "main" } });
+  mockGetBranch.mockResolvedValue({ data: { commit: { sha } } });
+  expect(await getHeadSha(project.repoName)).toBe(sha);
+  expect(mockGetRepository).toHaveBeenCalledWith({
+    owner: "cds-snc", repo: "notification-geolocate-webservice",
+  });
+  expect(mockGetBranch).toHaveBeenCalledWith({
+    owner: "cds-snc", repo: "notification-geolocate-webservice", branch: "main",
+  });
+  setupListCommits([
+    makeApiCommit("aaaaaaa", "Geolocate fix (#123)"),
+    makeApiCommit("bbbbbbb", "Previous release"),
+  ]);
+  const logs = await buildLogs([{ repoName: project.repoName, oldSha: "bbbbbbb" }]);
+  expect(mockListCommits).toHaveBeenCalledWith({
+    owner: "cds-snc", repo: "notification-geolocate-webservice", per_page: 50,
+  });
+  expect(logs).toContain("https://github.com/cds-snc/notification-geolocate-webservice/pull/123");
 });
 
 describe("buildLogs – empty repository headers", () => {
