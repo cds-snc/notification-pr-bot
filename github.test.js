@@ -26,11 +26,11 @@ process.env.TOKEN = "test-token";
 const { buildLogs } = require("./github");
 const { getRepoDefaults } = require("./repo-defaults");
 
-test("tracks notification-geolocate without changing its published image", () => {
+test("tracks notification-geolocate-webservice without changing its published image", () => {
   const defaults = getRepoDefaults("notification-manifests", "public.ecr.aws/cds-snc");
   const ipv4 = defaults.projects.find((project) => project.helmfileTagKey === "IPV4_DOCKER_TAG");
   expect(ipv4).toEqual(expect.objectContaining({
-    repoName: "notification-geolocate",
+    repoName: "notification-geolocate-webservice",
     ecrUrl: "public.ecr.aws/cds-snc",
     ecrName: "notify-ipv4-geolocate-webservice",
   }));
