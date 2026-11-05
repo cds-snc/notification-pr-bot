@@ -7382,7 +7382,7 @@ function getRepoDefaults(targetRepo, awsEcrUrl) {
       ecrName: "notify-documentation",
     },
     {
-      repoName: "notification-ipv4-geolocate-webservice",
+      repoName: "notification-geolocate",
       helmfileOverride: "helmfile/overrides/production.env",
       helmfileTagKey: "IPV4_DOCKER_TAG",
       ecrUrl: "public.ecr.aws/cds-snc",
