@@ -34,11 +34,11 @@ process.env.TOKEN = "test-token";
 const { buildLogs, getHeadSha } = require("./github");
 const { getRepoDefaults } = require("./repo-defaults");
 
-test("tracks notification-geolocate-webservice without changing its published image", () => {
+test("tracks notification-geolocate-api without changing its published image", () => {
   const defaults = getRepoDefaults("notification-manifests", "public.ecr.aws/cds-snc");
   const ipv4 = defaults.projects.find((project) => project.helmfileTagKey === "IPV4_DOCKER_TAG");
   expect(ipv4).toEqual(expect.objectContaining({
-    repoName: "notification-geolocate-webservice",
+    repoName: "notification-geolocate-api",
     ecrUrl: "public.ecr.aws/cds-snc",
     ecrName: "notify-ipv4-geolocate-webservice",
   }));
@@ -86,10 +86,10 @@ test("uses the renamed source in GitHub API calls and constructed release links"
   mockGetBranch.mockResolvedValue({ data: { commit: { sha } } });
   expect(await getHeadSha(project.repoName)).toBe(sha);
   expect(mockGetRepository).toHaveBeenCalledWith({
-    owner: "cds-snc", repo: "notification-geolocate-webservice",
+    owner: "cds-snc", repo: "notification-geolocate-api",
   });
   expect(mockGetBranch).toHaveBeenCalledWith({
-    owner: "cds-snc", repo: "notification-geolocate-webservice", branch: "main",
+    owner: "cds-snc", repo: "notification-geolocate-api", branch: "main",
   });
   setupListCommits([
     makeApiCommit("aaaaaaa", "Geolocate fix (#123)"),
@@ -97,9 +97,9 @@ test("uses the renamed source in GitHub API calls and constructed release links"
   ]);
   const logs = await buildLogs([{ repoName: project.repoName, oldSha: "bbbbbbb" }]);
   expect(mockListCommits).toHaveBeenCalledWith({
-    owner: "cds-snc", repo: "notification-geolocate-webservice", per_page: 50,
+    owner: "cds-snc", repo: "notification-geolocate-api", per_page: 50,
   });
-  expect(logs).toContain("https://github.com/cds-snc/notification-geolocate-webservice/pull/123");
+  expect(logs).toContain("https://github.com/cds-snc/notification-geolocate-api/pull/123");
 });
 
 describe("buildLogs – empty repository headers", () => {
