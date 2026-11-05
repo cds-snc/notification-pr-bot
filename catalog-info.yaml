@@ -6,7 +6,6 @@ metadata:
   description: GitHub Action that prepares production release pull requests for GC Notify.
   annotations:
     github.com/project-slug: cds-snc/notification-pr-bot
-    backstage.io/source-location: url:https://github.com/cds-snc/notification-pr-bot/tree/main/
   labels:
     license: MIT
 spec:
