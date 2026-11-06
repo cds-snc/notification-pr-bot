@@ -2,10 +2,12 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: notification-pr-bot
+  title: Notification PR Bot
   description: Small script to make deploy to production PRs for Notify
   labels:
     license: MIT
 spec:
-  type: website
-  lifecycle: experimental
-  owner: notify-dev
+  type: tool
+  lifecycle: production
+  owner: group:cds-snc/notify-dev
+  system: gc-notification
